@@ -1,3 +1,6 @@
+// Import functions will be available globally since they're loaded via manifest.json
+
+
 document.addEventListener("DOMContentLoaded", () => {
   // Initialize all UI elements
   const statusDot = document.getElementById("statusDot");
@@ -408,6 +411,36 @@ document.addEventListener("DOMContentLoaded", () => {
       // Future: Send to Jira and Slack
       // await createJiraTicket(bugReport);
       // await notifySlackChannel(bugReport);
+
+      window.jiraService.getCurrentUser()
+      .then(res =>{
+        const reporterId = res.accountId;
+        const assigneeId = reporterId
+        const projectId = "10057" // sumo project ID
+        const priority = "2" // Medium priority
+        const componentName = "Query editor"
+        const parentKey = 'SUMO-268781' // hack sumo issue epic
+        const componentId = '10702' // logs/metric UI
+        return window.jiraService.createJiraIssue({
+          assigneeId: assigneeId,
+          componentId: componentId,
+          description: bugReport.description,
+          projectId: projectId,
+          reporterId: reporterId,
+          summary: componentName + " - " + (bugReport.description || "Bug Report"),
+          priority,
+          parentKey
+        });
+      })
+      .then(res=>{
+        const harBlob = window.utils.createHarBlob(networkData);
+        return window.jiraService.attachFilesToJira(res.key , harBlob);
+      })
+      .then((res) => {
+        updateStatusIndicator("ready", "Bug Reported " + res);
+      })
+
+
     } catch (error) {
       console.error("Error reporting bug:", error);
       updateStatusIndicator("error", "Report Failed");

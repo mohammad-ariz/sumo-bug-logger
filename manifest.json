@@ -21,7 +21,11 @@
       "run_at": "document_end"
     }
   ],
-  "host_permissions": ["*://*.sumologic.net/*", "http://localhost:8443/*"],
+  "host_permissions": [
+    "*://*.sumologic.net/*", 
+    "http://localhost:8443/*",
+    "https://*.atlassian.net/*"
+  ],
   "permissions": [
     "activeTab",
     "storage",

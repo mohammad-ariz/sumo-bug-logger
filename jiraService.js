@@ -1,5 +1,5 @@
 
-const { ENV } = require('./config.dev.js');
+// Config will be loaded globally via manifest.json
 
 /**
  * Creates a Jira issue using the provided issue data.
@@ -7,16 +7,16 @@ const { ENV } = require('./config.dev.js');
  * @returns {Promise<Object>} - The created issue response.
  */
 
-async function createJiraIssue({ assigneeId , componentId , description, projectId , reporterId , summary , priority  }) {
-  const email = ENV.email;
-  const apiToken = ENV.apiToken;
-  const jiraDomain = ENV.jiraDomain;
+async function createJiraIssue({ assigneeId , componentId , description, projectId , reporterId , summary , priority , parentKey  }) {
+  const email = window.ENV.email;
+  const apiToken = window.ENV.apiToken;
+  const jiraDomain = window.ENV.jiraDomain;
   if (!email || !apiToken) {
     throw new Error('Email or API Token not configured in config.dev.js');
   }
   const url = `https://${jiraDomain}/rest/api/3/issue`;
   const headers = {
-    'Authorization': `Basic ${Buffer.from(`${email}:${apiToken}`).toString('base64')}`,
+    'Authorization': `Basic ${btoa(`${email}:${apiToken}`)}`,
     'Accept': 'application/json',
     'Content-Type': 'application/json'
   };
@@ -47,19 +47,14 @@ async function createJiraIssue({ assigneeId , componentId , description, project
       "type": "doc",
       "version": 1
     },
-    "fixVersions": [
-      {
-        "id": "10001"
-      }
-    ],
     "issuetype": {
-      "id": "10000"
+      "id": "10105"
     },
     "labels": [
-        "bug", "urgent"
+        "bug"
     ],
     "parent": {
-      "key": "PROJ-123"
+      "key": parentKey 
     },
     "priority": {
       "id": priority
@@ -67,20 +62,8 @@ async function createJiraIssue({ assigneeId , componentId , description, project
     "project": {
       "id": projectId
     },
-    "reporter": {
-      "id": reporterId
-    },
-    "security": {
-      "id": "10000"
-    },
     "summary": summary,
-    "versions": [
-      {
-        "id": "10000"
-      }
-    ]
   },
-  "update": {}
 });
 
   try {
@@ -100,20 +83,22 @@ async function createJiraIssue({ assigneeId , componentId , description, project
 }
 
 
-async function attachFilesToJira(issueIdOrKey, harBlob, consoleBlob) {
+async function attachFilesToJira(issueKey, harBlob, consoleBlob , videoBlob) {
   const formData = new FormData();
   formData.append("file", harBlob, "network.har");
-  formData.append("file", consoleBlob, "console.log.txt");
+//   formData.append("file", consoleBlob, "console.log.txt");
+//   formData.append("file", videoBlob, "video.mp4");
 
-  const url = `https://${jiraDomain}/rest/api/3/issue/${issueIdOrKey}/attachments`;
+const jiraDomain = window.ENV.jiraDomain;
+const email = window.ENV.email;
+const apiToken = window.ENV.apiToken;
+const url = `https://${jiraDomain}/rest/api/3/issue/${issueKey}/attachments`;
 
   fetch(url, {
      method: 'POST',
-     body: form,
+     body: formData,
      headers: {
-         'Authorization': `Basic ${Buffer.from(
-             'email@example.com:'
-         ).toString('base64')}`,
+        'Authorization': `Basic ${btoa(`${email}:${apiToken}`)}`,
          'Accept': 'application/json',
          'X-Atlassian-Token': 'no-check'
      }
@@ -124,7 +109,9 @@ async function attachFilesToJira(issueIdOrKey, harBlob, consoleBlob) {
          );
          return response.text();
      })
-     .then(text => console.log(text))
+     .then(text => {
+        return `https://${jiraDomain}/browse/${issueKey}`
+     })
 }
 
 
@@ -133,15 +120,15 @@ async function attachFilesToJira(issueIdOrKey, harBlob, consoleBlob) {
  * @returns {Promise<Object>} - The current user info.
  */
 async function getCurrentUser() {
-  const email = ENV.email;
-  const apiToken = ENV.apiToken;
-  const jiraDomain = ENV.jiraDomain;
+  const email = window.ENV.email;
+  const apiToken = window.ENV.apiToken;
+  const jiraDomain = window.ENV.jiraDomain;
   if (!email || !apiToken) {
     throw new Error('Email or API Token not configured in config.dev.js');
   }
   const url = `https://${jiraDomain}/rest/api/3/myself`;
   const headers = {
-    'Authorization': `Basic ${Buffer.from(`${email}:${apiToken}`).toString('base64')}`,
+    'Authorization': `Basic ${btoa(`${email}:${apiToken}`)}`,
     'Accept': 'application/json'
   };
   try {
@@ -159,4 +146,5 @@ async function getCurrentUser() {
   }
 }
 
-module.exports = { createJiraIssue, getCurrentUser, attachFilesToJira };
+// Browser-compatible exports
+window.jiraService = { createJiraIssue, getCurrentUser, attachFilesToJira };
