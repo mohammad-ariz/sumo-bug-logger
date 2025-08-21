@@ -1,0 +1,18 @@
+{
+  "name": "sumo-bug-logger",
+  "version": "1.0.0",
+  "description": "Internal Chrome extension for streamlined bug reporting workflow",
+  "scripts": {
+    "watch": "node watch-extension.js",
+    "dev": "node watch-extension.js"
+  },
+  "keywords": [
+    "chrome-extension",
+    "bug-reporting",
+    "development-tools"
+  ],
+  "author": "Sumo Logic Dev Team",
+  "license": "ISC",
+  "devDependencies": {},
+  "dependencies": {}
+}

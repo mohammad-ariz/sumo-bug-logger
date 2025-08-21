@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Sumo Bug Logger",
   "version": "1.0",
-  "description": "A Chrome extension for logging bugs in Sumo Logic.",
+  "description": "Internal Chrome extension for streamlined bug reporting workflow with team identification and evidence collection.",
   "action": {
     "default_popup": "index.html",
     "default_icon": {
@@ -16,25 +16,20 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://*.sumologic.com/*",
-        "http://localhost/*",
-        "https://localhost/*",
-        "http://127.0.0.1/*",
-        "https://127.0.0.1/*"
-      ],
+      "matches": ["*://*.sumologic.net/*", "http://localhost:8443/*"],
       "js": ["content.js"],
       "run_at": "document_end"
     }
   ],
-  "host_permissions": [
-    "https://*.sumologic.com/*",
-    "http://localhost/*",
-    "https://localhost/*",
-    "http://127.0.0.1/*",
-    "https://127.0.0.1/*"
+  "host_permissions": ["*://*.sumologic.net/*", "http://localhost:8443/*"],
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "debugger",
+    "tabs",
+    "desktopCapture"
   ],
-  "permissions": ["storage", "activeTab", "scripting", "notifications", "debugger"],
   "icons": {
     "16": "icons/bug.png",
     "48": "icons/bug.png",

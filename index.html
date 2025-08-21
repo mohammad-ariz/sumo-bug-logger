@@ -1,171 +1,683 @@
 <!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body {
-      width: 400px;
-      padding: 20px;
-      font-family: Arial, sans-serif;
-    }
-    
-    .button {
-      width: 100%;
-      padding: 12px;
-      margin: 8px 0;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-    }
-    
-    .button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    
-    .primary-btn {
-      background-color: #4CAF50;
-      color: white;
-    }
-    
-    .primary-btn:hover:not(:disabled) {
-      background-color: #45a049;
-    }
-    
-    .secondary-btn {
-      background-color: #008CBA;
-      color: white;
-    }
-    
-    .secondary-btn:hover:not(:disabled) {
-      background-color: #007B9A;
-    }
-    
-    .danger-btn {
-      background-color: #f44336;
-      color: white;
-    }
-    
-    .danger-btn:hover:not(:disabled) {
-      background-color: #da190b;
-    }
-    
-    .info-box {
-      background-color: #f0f8ff;
-      border: 1px solid #add8e6;
-      border-radius: 6px;
-      padding: 15px;
-      margin: 15px 0;
-      max-height: 300px;
-      overflow-y: auto;
-    }
-    
-    .info-box h4 {
-      margin: 0 0 10px 0;
-      color: #333;
-    }
-    
-    .info-item {
-      margin: 8px 0;
-      padding: 8px;
-      background-color: white;
-      border-radius: 4px;
-      border-left: 3px solid #4CAF50;
-      word-wrap: break-word;
-    }
-    
-    .network-json {
-      background-color: #f8f9fa !important;
-      border: 1px solid #dee2e6 !important;
-      border-radius: 4px !important;
-      padding: 10px !important;
-      margin-top: 8px !important;
-      max-height: 200px !important;
-      overflow-y: auto !important;
-      font-family: 'Courier New', monospace !important;
-      font-size: 11px !important;
-      white-space: pre-wrap !important;
-      color: #495057 !important;
-      border-left: 3px solid #008CBA !important;
-    }
-    
-    .status {
-      padding: 10px;
-      border-radius: 4px;
-      margin: 10px 0;
-      text-align: center;
-      font-weight: 500;
-    }
-    
-    .success {
-      background-color: #d4edda;
-      color: #155724;
-      border: 1px solid #c3e6cb;
-    }
-    
-    .error {
-      background-color: #f8d7da;
-      color: #721c24;
-      border: 1px solid #f5c6cb;
-    }
-    
-    .info {
-      background-color: #cce7ff;
-      color: #004085;
-      border: 1px solid #b3d9ff;
-    }
-    
-    #recordingIndicator {
-      background-color: #ff6b6b;
-      color: white;
-      padding: 8px;
-      border-radius: 20px;
-      text-align: center;
-      font-size: 12px;
-      animation: pulse 1s infinite;
-    }
-    
-    @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.7; }
-      100% { opacity: 1; }
-    }
-    
-    .hidden {
-      display: none;
-    }
-  </style>
-</head>
-<body>
-  <h3>🐛 Sumo Bug Logger</h3>
-  
-  <button id="selectRegionBtn" class="button primary-btn">
-    📋 Select Buggy Region
-  </button>
-  
-  <button id="recordNetworkBtn" class="button secondary-btn" disabled>
-    🌐 Record Network Session
-  </button>
-  
-  <div id="recordingIndicator" class="hidden">
-    🔴 Recording Network Activity...
-  </div>
-  
-  <div id="infoBox" class="info-box">
-    <h4>📊 Bug Information</h4>
-    <div id="infoContent">
-      <p style="color: #666; text-align: center;">Select a buggy region to start</p>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sumo Bug Logger</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        width: 350px;
+        min-height: 600px;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: #f8f9fa;
+        color: #333;
+      }
+
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 16px;
+        text-align: center;
+        position: relative;
+      }
+
+      .header h1 {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      .status-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        opacity: 0.9;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #4caf50;
+      }
+
+      .status-dot.recording {
+        background: #f44336;
+        animation: pulse 1.5s infinite;
+      }
+
+      .status-dot.processing {
+        background: #ff9800;
+      }
+
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+
+      .progress-indicator {
+        margin-top: 8px;
+        font-size: 11px;
+        opacity: 0.8;
+      }
+
+      .container {
+        padding: 20px;
+      }
+
+      .step-section {
+        margin-bottom: 24px;
+        border: 1px solid #e1e5e9;
+        border-radius: 8px;
+        background: white;
+        overflow: hidden;
+      }
+
+      .step-header {
+        background: #f8f9fa;
+        padding: 12px 16px;
+        border-bottom: 1px solid #e1e5e9;
+        font-weight: 600;
+        font-size: 14px;
+        color: #495057;
+      }
+
+      .step-content {
+        padding: 16px;
+      }
+
+      .button {
+        width: 100%;
+        padding: 12px 16px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-align: center;
+        margin-bottom: 8px;
+      }
+
+      .primary-btn {
+        background: #007bff;
+        color: white;
+      }
+
+      .primary-btn:hover:not(:disabled) {
+        background: #0056b3;
+        transform: translateY(-1px);
+      }
+
+      .primary-btn:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+      }
+
+      .secondary-btn {
+        background: #6c757d;
+        color: white;
+      }
+
+      .secondary-btn:hover:not(:disabled) {
+        background: #545b62;
+      }
+
+      .success-btn {
+        background: #28a745;
+        color: white;
+      }
+
+      .danger-btn {
+        background: #dc3545;
+        color: white;
+        animation: pulse-red 1.5s infinite;
+      }
+
+      @keyframes pulse-red {
+        0% {
+          box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
+        }
+        70% {
+          box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+        }
+      }
+
+      .warning-btn {
+        background: #fd7e14;
+        color: white;
+      }
+
+      .status-text {
+        font-size: 12px;
+        color: #6c757d;
+        text-align: center;
+        margin-top: 8px;
+        line-height: 1.4;
+      }
+
+      .recording-indicators {
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 6px;
+        padding: 12px;
+        margin-top: 12px;
+        font-size: 12px;
+      }
+
+      .indicator-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 4px;
+      }
+
+      .indicator-item:last-child {
+        margin-bottom: 0;
+      }
+
+      .team-info-panel {
+        background: #e3f2fd;
+        border: 1px solid #bbdefb;
+        border-radius: 6px;
+        padding: 12px;
+        margin-bottom: 16px;
+      }
+
+      .team-info-header {
+        font-weight: 600;
+        font-size: 13px;
+        color: #1565c0;
+        margin-bottom: 8px;
+      }
+
+      .team-info-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 4px;
+        font-size: 12px;
+      }
+
+      .team-info-item:last-child {
+        margin-bottom: 0;
+      }
+
+      .evidence-panel {
+        border: 1px solid #e1e5e9;
+        border-radius: 6px;
+        padding: 12px;
+        margin-bottom: 16px;
+      }
+
+      .evidence-header {
+        font-weight: 600;
+        font-size: 13px;
+        color: #495057;
+        margin-bottom: 12px;
+      }
+
+      .evidence-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid #f1f3f4;
+        font-size: 12px;
+      }
+
+      .evidence-item:last-child {
+        border-bottom: none;
+      }
+
+      .evidence-thumbnail {
+        width: 60px;
+        height: 40px;
+        border-radius: 4px;
+        background: #f8f9fa;
+        border: 1px solid #e1e5e9;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        color: #6c757d;
+      }
+
+      .form-group {
+        margin-bottom: 16px;
+      }
+
+      .form-label {
+        display: block;
+        font-weight: 500;
+        font-size: 13px;
+        color: #495057;
+        margin-bottom: 6px;
+      }
+
+      .form-control {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+        font-family: inherit;
+        resize: vertical;
+      }
+
+      .form-control:focus {
+        outline: none;
+        border-color: #007bff;
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+      }
+
+      select.form-control {
+        background: white;
+        cursor: pointer;
+      }
+
+      .char-counter {
+        font-size: 11px;
+        color: #6c757d;
+        text-align: right;
+        margin-top: 4px;
+      }
+
+      .note-text {
+        font-size: 11px;
+        color: #6c757d;
+        font-style: italic;
+        margin-top: 4px;
+      }
+
+      .action-buttons {
+        border-top: 1px solid #e1e5e9;
+        padding: 16px;
+        background: #f8f9fa;
+      }
+
+      .secondary-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .secondary-actions .button {
+        flex: 1;
+        font-size: 12px;
+        padding: 8px 12px;
+      }
+
+      .export-btn {
+        background: #17a2b8;
+        color: white;
+        border: 1px solid #17a2b8;
+      }
+
+      .clear-btn {
+        background: transparent;
+        color: #dc3545;
+        border: 1px solid #dc3545;
+      }
+
+      .clear-btn:hover {
+        background: #dc3545;
+        color: white;
+      }
+
+      .footer {
+        padding: 12px 20px;
+        background: #f8f9fa;
+        border-top: 1px solid #e1e5e9;
+        font-size: 11px;
+        color: #6c757d;
+        text-align: center;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+      }
+
+      .modal {
+        background: white;
+        border-radius: 8px;
+        padding: 24px;
+        max-width: 400px;
+        margin: 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      }
+
+      .modal-header {
+        font-weight: 600;
+        font-size: 16px;
+        color: #dc3545;
+        margin-bottom: 12px;
+      }
+
+      .modal-content {
+        font-size: 14px;
+        color: #495057;
+        line-height: 1.5;
+        margin-bottom: 20px;
+      }
+
+      .modal-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+      }
+
+      .modal-btn {
+        padding: 8px 16px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .modal-btn.cancel {
+        background: #f8f9fa;
+        color: #495057;
+      }
+
+      .modal-btn.cancel:hover {
+        background: #e9ecef;
+      }
+
+      .modal-btn.confirm {
+        background: #dc3545;
+        color: white;
+        border-color: #dc3545;
+      }
+
+      .modal-btn.confirm:hover {
+        background: #c82333;
+      }
+
+      .info-content {
+        font-size: 12px;
+        color: #666;
+        text-align: center;
+        padding: 20px;
+        font-style: italic;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <div class="header">
+      <h1>🐛 Sumo Bug Logger</h1>
+      <div class="status-indicator">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Ready</span>
+      </div>
+      <div class="progress-indicator" id="progressIndicator">Step 1 of 3</div>
     </div>
-  </div>
-  
-  <div id="status" class="hidden"></div>
-  
-  <button id="clearDataBtn" class="button danger-btn">
-    🗑️ Clear All Data
-  </button>
-  
-  <script src="popup.js"></script>
-</body>
+
+    <!-- Main Container -->
+    <div class="container">
+      <!-- Step 1: Bug Area Selection -->
+      <div class="step-section" id="step1">
+        <div class="step-header">📍 Select Bug Area</div>
+        <div class="step-content">
+          <button id="selectRegionBtn" class="button primary-btn">
+            Select Bug Area
+          </button>
+          <div class="status-text" id="step1Status">
+            Click to start selecting the buggy region
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Evidence Collection -->
+      <div class="step-section" id="step2">
+        <div class="step-header">🎬 Record Reproducible Steps</div>
+        <div class="step-content">
+          <button id="recordNetworkBtn" class="button secondary-btn" disabled>
+            🔴 Start Recording
+          </button>
+          <div class="status-text" id="step2Status">Complete step 1 first</div>
+          <div class="recording-indicators hidden" id="recordingIndicators">
+            <div class="indicator-item">
+              <span>⏱️ Timer:</span>
+              <span id="recordingTimer">00:00</span>
+            </div>
+            <div class="indicator-item">
+              <span>📡 Network:</span>
+              <span id="networkCounter">0 requests</span>
+            </div>
+            <div class="indicator-item">
+              <span>❌ Console:</span>
+              <span id="consoleCounter">0 errors, 0 warnings</span>
+            </div>
+            <div class="indicator-item">
+              <span>🎥 Video:</span>
+              <span id="videoStatus">Recording...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: Information Review & Report -->
+      <div class="step-section" id="step3">
+        <div class="step-header">📋 Review & Report Bug</div>
+        <div class="step-content">
+          <!-- Team Information Panel -->
+          <div class="team-info-panel hidden" id="teamInfoPanel">
+            <div class="team-info-header">� Team Information</div>
+            <div class="team-info-item">
+              <span>Team:</span>
+              <span id="teamName">-</span>
+            </div>
+            <div class="team-info-item">
+              <span>Manager:</span>
+              <span id="managerName">-</span>
+            </div>
+            <div class="team-info-item">
+              <span>Jira Label:</span>
+              <span id="jiraLabel">-</span>
+            </div>
+            <div class="team-info-item">
+              <span>Slack Channel:</span>
+              <span id="slackChannel">-</span>
+            </div>
+          </div>
+
+          <!-- Evidence Summary Panel -->
+          <div class="evidence-panel hidden" id="evidencePanel">
+            <div class="evidence-header">📎 Collected Evidence</div>
+
+            <div class="evidence-item" id="screenshotEvidence">
+              <div>
+                <div>📸 Screenshot</div>
+                <div style="font-size: 10px; color: #6c757d">
+                  Click to preview
+                </div>
+              </div>
+              <div class="evidence-thumbnail" id="screenshotThumbnail">
+                🔍 View
+              </div>
+            </div>
+
+            <div class="evidence-item hidden" id="videoEvidence">
+              <div>
+                <div>🎥 Video Recording</div>
+                <div style="font-size: 10px; color: #6c757d" id="videoDuration">
+                  Click to preview or download
+                </div>
+              </div>
+              <div style="display: flex; gap: 4px">
+                <div
+                  class="evidence-thumbnail"
+                  id="videoThumbnail"
+                  style="flex: 1"
+                >
+                  ▶️ Preview
+                </div>
+                <div
+                  class="evidence-thumbnail"
+                  id="downloadVideo"
+                  style="flex: 1; background: #28a745"
+                >
+                  ⬇️ Download
+                </div>
+              </div>
+            </div>
+
+            <div class="evidence-item hidden" id="networkEvidence">
+              <div>
+                <div>📡 Network Data</div>
+                <div
+                  style="font-size: 10px; color: #6c757d"
+                  id="networkSummary"
+                >
+                  HAR file
+                </div>
+              </div>
+              <button class="evidence-thumbnail" id="downloadHar">
+                ⬇️ Download
+              </button>
+            </div>
+
+            <div class="evidence-item hidden" id="consoleEvidence">
+              <div>
+                <div>🔍 Console Logs</div>
+                <div
+                  style="font-size: 10px; color: #6c757d"
+                  id="consoleSummary"
+                >
+                  Text file
+                </div>
+              </div>
+              <button class="evidence-thumbnail" id="downloadLogs">
+                ⬇️ Download
+              </button>
+            </div>
+          </div>
+
+          <!-- Bug Details Form -->
+          <div class="form-group">
+            <label class="form-label" for="bugDescription"
+              >🐛 Bug Description *</label
+            >
+            <textarea
+              id="bugDescription"
+              class="form-control"
+              rows="4"
+              placeholder="Describe what you expected vs what actually happened..."
+              maxlength="1000"
+            ></textarea>
+            <div class="char-counter" id="descriptionCounter">
+              0/1000 characters
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="severityLevel"
+              >⚡ Severity Level *</label
+            >
+            <select id="severityLevel" class="form-control">
+              <option value="">Select severity...</option>
+              <option value="critical">
+                🔴 Critical (System down, blocking)
+              </option>
+              <option value="high">🟠 High (Major functionality broken)</option>
+              <option value="medium">
+                🟡 Medium (Minor functionality issue)
+              </option>
+              <option value="low">🟢 Low (Cosmetic, enhancement)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="stepsToReproduce"
+              >📝 Steps to Reproduce</label
+            >
+            <textarea
+              id="stepsToReproduce"
+              class="form-control"
+              rows="3"
+              placeholder="1. Navigate to...&#10;2. Click on...&#10;3. Observe..."
+            ></textarea>
+            <div class="note-text">
+              Video recording will be attached automatically
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="action-buttons">
+      <button id="reportBugBtn" class="button primary-btn" disabled>
+        🚀 Report Bug
+      </button>
+      <div class="secondary-actions">
+        <button id="clearDataBtn" class="button clear-btn">
+          🗑️ Clear All Data
+        </button>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <div id="dataStatus">Ready to start</div>
+      <div id="storageUsage">Using 0 MB storage</div>
+    </div>
+
+    <!-- Info Content (shown when no data) -->
+    <div id="infoContent" class="info-content hidden">
+      Select a buggy region to start
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal-overlay hidden" id="confirmModal">
+      <div class="modal">
+        <div class="modal-header" id="modalTitle">⚠️ Clear All Data?</div>
+        <div class="modal-content" id="modalContent">
+          This will permanently delete all collected evidence including
+          screenshots, videos, network data, and console logs. This action
+          cannot be undone.
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" id="modalCancel">Cancel</button>
+          <button class="modal-btn confirm" id="modalConfirm">
+            🗑️ Delete Everything
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
 </html>

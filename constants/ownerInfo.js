@@ -1,6 +1,42 @@
 const OWNER_INFO = {
-    "@Sanyaku/ui-observability": {
-        managerName: 'Ayan Ghatak',
-        teamName: "Ui Observability",
-    }
-}
+  "@Sanyaku/ui-observability": {
+    teamName: "UI Observability",
+    teamJiraLabel: "UI Observability Issue",
+    managerName: "Ayan Ghatak",
+    managerId: "ayan.ghatak@sumologic.com",
+    slackChannel: "#ui-observability-bugs",
+    slackChannelId: "C1234567890",
+  },
+  "@Frontend/core": {
+    teamName: "Frontend Core",
+    teamJiraLabel: "Frontend Core Issue",
+    managerName: "Sarah Johnson",
+    managerId: "sarah.johnson@sumologic.com",
+    slackChannel: "#frontend-core-bugs",
+    slackChannelId: "C2345678901",
+  },
+  "@Backend/api": {
+    teamName: "Backend API",
+    teamJiraLabel: "API Issue",
+    managerName: "Mike Chen",
+    managerId: "mike.chen@sumologic.com",
+    slackChannel: "#backend-api-bugs",
+    slackChannelId: "C3456789012",
+  },
+  "@Platform/infrastructure": {
+    teamName: "Platform Infrastructure",
+    teamJiraLabel: "Infrastructure Issue",
+    managerName: "Emily Rodriguez",
+    managerId: "emily.rodriguez@sumologic.com",
+    slackChannel: "#platform-bugs",
+    slackChannelId: "C4567890123",
+  },
+  "@Security/auth": {
+    teamName: "Security & Auth",
+    teamJiraLabel: "Security Issue",
+    managerName: "David Kumar",
+    managerId: "david.kumar@sumologic.com",
+    slackChannel: "#security-bugs",
+    slackChannelId: "C5678901234",
+  },
+};
