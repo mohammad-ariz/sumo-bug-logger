@@ -1,12 +1,28 @@
 console.log("Sumo Bug Logger content script loaded on:", window.location.href);
 
-// Import owner info constants - this will be loaded from constants/ownerInfo.js
+// State variables
 let isSelecting = false;
-let selectionOverlay = null;
-let startX = 0,
-  startY = 0;
-let selectionBox = null;
+let componentTooltip = null;
+let highlightedElement = null;
 let toastElement = null;
+
+// Component info mapping
+const COMPONENT_INFO = {
+  queryEditor: "@Sanyaku/ui-observability",
+  messageTable: "@Sanyaku/ui-observability", 
+  logInspector: "@Sanyaku/ui-observability",
+  searchBar: "@Sanyaku/ui-observability",
+  filterPanel: "@Sanyaku/ui-observability",
+  dashboardWidget: "@Frontend/core",
+  navigationBar: "@Frontend/core",
+  sidePanel: "@Frontend/core",
+  userProfile: "@Security/auth",
+  loginForm: "@Security/auth",
+  apiConnector: "@Backend/api",
+  dataProcessor: "@Backend/api",
+  systemStatus: "@Platform/infrastructure",
+  serverMetrics: "@Platform/infrastructure"
+};
 
 // Signal that content script is ready
 try {
@@ -21,12 +37,12 @@ try {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log("Content script received message:", request);
 
-  if (request.action === "startRegionSelection") {
+  if (request.action === "startComponentSelection") {
     try {
-      startRegionSelection();
+      startComponentSelection();
       sendResponse({ success: true });
     } catch (error) {
-      console.error("Error starting region selection:", error);
+      console.error('Error starting component selection:', error);
       sendResponse({ success: false, error: error.message });
     }
   }
@@ -34,588 +50,568 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
-// Load owner info constants
-async function loadOwnerInfo() {
-  try {
-    const response = await fetch(
-      chrome.runtime.getURL("constants/ownerInfo.js")
-    );
-    const text = await response.text();
-    // Extract the OWNER_INFO object from the file
-    const match = text.match(/const OWNER_INFO = ({[\\s\\S]*?});/);
-    if (match) {
-      return eval("(" + match[1] + ")");
-    }
-  } catch (error) {
-    console.warn("Could not load owner info:", error);
+// Start component selection mode
+function startComponentSelection() {
+  console.log("Starting component selection mode");
+  
+  if (isSelecting) {
+    console.log("Already in selection mode, stopping first");
+    stopComponentSelection();
   }
-
-  // Fallback data
-  return {
-    hash1: {
-      teamName: "Frontend Team",
-      teamJiraLabel: "UI Issue",
-      managerName: "John Doe",
-      managerId: "john.doe@company.com",
-      slackChannel: "#frontend-bugs",
-      slackChannelId: "C1234567890",
-    },
-    hash2: {
-      teamName: "Backend Team",
-      teamJiraLabel: "API Issue",
-      managerName: "Jane Smith",
-      managerId: "jane.smith@company.com",
-      slackChannel: "#backend-bugs",
-      slackChannelId: "C9876543210",
-    },
-  };
-}
-
-function startRegionSelection() {
-  console.log("Starting region selection...");
-
-  // Clean up any existing selection first
-  cleanupSelection();
-
-  // Create overlay for selection
-  createSelectionOverlay();
 
   isSelecting = true;
-
-  // Add event listeners for selection
-  document.addEventListener("mousedown", handleMouseDown);
-  document.addEventListener("mousemove", handleMouseMove);
-  document.addEventListener("mouseup", handleMouseUp);
-  document.addEventListener("keydown", handleKeyDown);
-
-  // Show instructions banner
-  showInstructionsBanner();
+  document.body.style.cursor = 'pointer';
+  
+  // Add simple event listeners for component detection
+  document.addEventListener('mouseover', handleMouseOver, true);
+  document.addEventListener('mouseout', handleMouseOut, true);
+  document.addEventListener('click', handleComponentClick, true);
+  document.addEventListener('keydown', handleKeydown, true);
+  
+  // Show toast notification
+  showToast("Hover over elements to find components and click to select", "info");
+  
+  console.log("Component selection mode activated - hover over elements to see highlights");
 }
 
-function createSelectionOverlay() {
-  selectionOverlay = document.createElement("div");
-  selectionOverlay.id = "sumo-selection-overlay";
-  selectionOverlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 999999;
-    cursor: crosshair;
-    pointer-events: all;
-  `;
-
-  document.body.appendChild(selectionOverlay);
-}
-
-function showInstructionsBanner() {
-  const banner = document.createElement("div");
-  banner.id = "sumo-instructions-banner";
-  banner.style.cssText = `
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #007bff;
-    color: white;
-    padding: 12px 24px;
-    border-radius: 8px;
-    font-family: 'Segoe UI', sans-serif;
-    font-size: 14px;
-    font-weight: 500;
-    z-index: 1000000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    animation: slideInTop 0.3s ease-out;
-  `;
-
-  banner.textContent =
-    "🎯 Draw a rectangle around the buggy area • Press ESC to cancel";
-
-  // Add animation styles
-  const style = document.createElement("style");
-  style.textContent = `
-    @keyframes slideInTop {
-      from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
-      to { transform: translateX(-50%) translateY(0); opacity: 1; }
-    }
-    @keyframes checkmark {
-      0% { transform: scale(0); }
-      50% { transform: scale(1.2); }
-      100% { transform: scale(1); }
-    }
-  `;
-  document.head.appendChild(style);
-
-  document.body.appendChild(banner);
-}
-
-function handleMouseDown(e) {
+// Simple mouse over handler
+function handleMouseOver(event) {
   if (!isSelecting) return;
-
-  e.preventDefault();
-  e.stopPropagation();
-
-  startX = e.clientX;
-  startY = e.clientY;
-
-  // Create selection box
-  selectionBox = document.createElement("div");
-  selectionBox.id = "sumo-selection-box";
-  selectionBox.style.cssText = `
-    position: fixed;
-    border: 2px dashed #007bff;
-    background: rgba(0, 123, 255, 0.1);
-    z-index: 1000000;
-    pointer-events: none;
-  `;
-
-  document.body.appendChild(selectionBox);
-
-  // Show coordinates tooltip
-  showCoordinatesTooltip(e.clientX, e.clientY);
+  
+  const element = event.target;
+  const componentElement = findComponentElement(element);
+  
+  if (!componentElement) return;
+  
+  const componentName = componentElement.getAttribute('data-bug-logger-id');
+  if (!componentName) return;
+  
+  // Don't re-highlight the same element
+  if (highlightedElement === componentElement) return;
+  
+  console.log('Highlighting component:', componentName);
+  
+  // Remove previous highlight
+  removeHighlight();
+  removeTooltip();
+  
+  // Highlight current element
+  highlightedElement = componentElement;
+  
+  // Store original styles
+  const originalStyles = {
+    outline: componentElement.style.outline,
+    outlineOffset: componentElement.style.outlineOffset,
+    boxShadow: componentElement.style.boxShadow
+  };
+  
+  componentElement._originalStyles = originalStyles;
+  
+  // Apply highlight styles
+  componentElement.style.outline = '2px solid #ff0000';
+  componentElement.style.outlineOffset = '2px';
+  componentElement.style.boxShadow = '0 0 0 4px rgba(255, 0, 0, 0.2)';
+  
+  // Show tooltip with lock button
+  showTooltip(event, componentName, componentElement);
 }
 
-function handleMouseMove(e) {
-  if (!isSelecting || !selectionBox) return;
-
-  e.preventDefault();
-
-  const currentX = e.clientX;
-  const currentY = e.clientY;
-
-  const left = Math.min(startX, currentX);
-  const top = Math.min(startY, currentY);
-  const width = Math.abs(currentX - startX);
-  const height = Math.abs(currentY - startY);
-
-  selectionBox.style.left = left + "px";
-  selectionBox.style.top = top + "px";
-  selectionBox.style.width = width + "px";
-  selectionBox.style.height = height + "px";
-
-  // Update coordinates tooltip
-  updateCoordinatesTooltip(currentX, currentY);
-}
-
-async function handleMouseUp(e) {
-  if (!isSelecting || !selectionBox) return;
-
-  e.preventDefault();
-  e.stopPropagation();
-
-  const endX = e.clientX;
-  const endY = e.clientY;
-
-  const left = Math.min(startX, endX);
-  const top = Math.min(startY, endY);
-  const width = Math.abs(endX - startX);
-  const height = Math.abs(endY - startY);
-
-  // Minimum selection size
-  if (width < 10 || height < 10) {
-    cleanupSelection();
-    startRegionSelection();
+// Simple mouse out handler
+function handleMouseOut(event) {
+  if (!isSelecting) return;
+  
+  const element = event.target;
+  const relatedTarget = event.relatedTarget;
+  
+  // Don't remove highlight/tooltip if moving to the tooltip or its children
+  if (relatedTarget && (
+    relatedTarget.closest('.component-tooltip') || 
+    relatedTarget.id === 'sumo-select-component-btn'
+  )) {
     return;
   }
-
-  // Show completion animation
-  showCompletionAnimation(left, top, width, height);
-
-  // Capture screenshot of the selected area
-  const screenshot = await captureSelectedArea(left, top, width, height);
-
-  // Extract owner information from DOM elements in the selected area
-  const ownerInfo = extractOwnerInfo(left, top, width, height);
-
-  // Get team information from owner hash
-  const teamInfo = await getTeamInfo(ownerInfo.ownerId);
-
-  // Save the region data
-  const regionData = {
-    x: left,
-    y: top,
-    width: width,
-    height: height,
-    screenshot: screenshot,
-    ownerId: ownerInfo.ownerId,
-    teamInfo: teamInfo,
-    url: window.location.href,
-    timestamp: Date.now(),
-    elements: ownerInfo.elements,
-  };
-
-  await chrome.storage.local.set({ bugRegionData: regionData });
-
-  // Show toast notification
-  showToastNotification(teamInfo);
-
-  // Clean up selection UI
-  setTimeout(() => {
-    cleanupSelection();
-  }, 1000);
-}
-
-function handleKeyDown(e) {
-  if (e.key === "Escape" && isSelecting) {
-    cleanupSelection();
+  
+  const componentElement = findComponentElement(element);
+  
+  // Only remove highlight if we're leaving the highlighted component
+  if (highlightedElement && componentElement !== highlightedElement) {
+    // Add a small delay to prevent flickering when moving to tooltip
+    setTimeout(() => {
+      // Check again if we're not hovering over tooltip
+      const hoveredElement = document.querySelector('.component-tooltip:hover');
+      if (!hoveredElement && isSelecting) {
+        removeHighlight();
+        removeTooltip();
+      }
+    }, 100);
   }
 }
 
-function showCoordinatesTooltip(x, y) {
-  let tooltip = document.getElementById("sumo-coordinates-tooltip");
-  if (!tooltip) {
-    tooltip = document.createElement("div");
-    tooltip.id = "sumo-coordinates-tooltip";
-    tooltip.style.cssText = `
+// Simple click handler
+function handleComponentClick(event) {
+  if (!isSelecting) return;
+  
+  // If clicking on the select button, let that handler take care of it
+  if (event.target.id === 'sumo-select-component-btn') {
+    return;
+  }
+  
+  const element = event.target;
+  const componentElement = findComponentElement(element);
+  
+  if (!componentElement) return;
+  
+  const componentName = componentElement.getAttribute('data-bug-logger-id');
+  if (!componentName) return;
+  
+  // Prevent default click behavior
+  event.preventDefault();
+  event.stopPropagation();
+  
+  console.log(`Direct click - Component selected: ${componentName}`);
+  
+  // Get team owner info
+  const teamOwner = COMPONENT_INFO[componentName] || "Unknown Team";
+  
+  // Capture screenshot of the selected component
+  captureComponentScreenshot(componentElement, componentName, teamOwner);
+}
+
+// Simple keydown handler
+function handleKeydown(event) {
+  if (!isSelecting) return;
+  
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    stopComponentSelection();
+    showToast("Component selection cancelled", "info");
+  }
+}
+
+// Stop component selection mode
+function stopComponentSelection() {
+  console.log("Stopping component selection mode");
+  
+  isSelecting = false;
+  document.body.style.cursor = '';
+  
+  // Remove simple event listeners
+  document.removeEventListener('mouseover', handleMouseOver, true);
+  document.removeEventListener('mouseout', handleMouseOut, true);
+  document.removeEventListener('click', handleComponentClick, true);
+  document.removeEventListener('keydown', handleKeydown, true);
+  
+  // Clean up UI elements
+  removeHighlight();
+  removeTooltip();
+  removeToast();
+}
+
+// Find element with data-bug-logger-id attribute by traversing up the DOM tree
+function findComponentElement(startElement) {
+  let element = startElement;
+  let maxDepth = 10; // Prevent infinite loops
+  let depth = 0;
+  
+  while (element && element !== document.body && depth < maxDepth) {
+    // Ensure element has getAttribute method and actually has the data-bug-logger-id attribute
+    if (element.getAttribute && typeof element.getAttribute === 'function') {
+      const componentAttr = element.getAttribute('data-bug-logger-id');
+      
+      if (componentAttr && componentAttr.trim() !== '') {
+        return element;
+      }
+    }
+    element = element.parentElement;
+    depth++;
+  }
+  
+  return null;
+}
+
+// Show tooltip with component information
+function showTooltip(event, componentName, componentElement) {
+  removeTooltip(); // Remove any existing tooltip first
+  
+  const moduleOwner = COMPONENT_INFO[componentName] || "Unknown Team";
+  
+  componentTooltip = document.createElement('div');
+  componentTooltip.className = 'component-tooltip';
+  componentTooltip.innerHTML = `
+    <div style="
       position: fixed;
-      background: rgba(0, 0, 0, 0.8);
-      color: white;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 11px;
-      z-index: 1000001;
-      pointer-events: none;
-    `;
-    document.body.appendChild(tooltip);
-  }
-
-  tooltip.textContent = `X: ${x}, Y: ${y}`;
-  tooltip.style.left = x + 10 + "px";
-  tooltip.style.top = y - 30 + "px";
-}
-
-function updateCoordinatesTooltip(x, y) {
-  const tooltip = document.getElementById("sumo-coordinates-tooltip");
-  if (tooltip) {
-    tooltip.textContent = `X: ${x}, Y: ${y}`;
-    tooltip.style.left = x + 10 + "px";
-    tooltip.style.top = y - 30 + "px";
-  }
-}
-
-function showCompletionAnimation(left, top, width, height) {
-  const checkmark = document.createElement("div");
-  checkmark.style.cssText = `
-    position: fixed;
-    left: ${left + width / 2 - 20}px;
-    top: ${top + height / 2 - 20}px;
-    width: 40px;
-    height: 40px;
-    background: #28a745;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000001;
-    animation: checkmark 0.5s ease-out;
+      background: white;
+      color: black;
+      padding: 10px 12px;
+      border-radius: 2px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      z-index: 2147483647;
+      pointer-events: all;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      max-width: 250px;
+      word-wrap: break-word;
+      border: 1px solid #ccc;
+    ">
+      <div style="color: black; font-weight: bold; margin-bottom: 2px;">Component Name: ${componentName}</div>
+      <div style="color: #666666; font-weight: bold; font-size: 11px; margin-bottom: 8px;">Module Owner: ${moduleOwner}</div>
+      <button id="sumo-select-component-btn" style="
+        background: #2063d6;
+        color: white;
+        border: none;
+        padding: 4px 8px;
+        border-radius: 3px;
+        font-size: 11px;
+        cursor: pointer;
+        font-family: inherit;
+      ">Select Component</button>
+    </div>
   `;
-  checkmark.innerHTML = "✓";
-  checkmark.style.color = "white";
-  checkmark.style.fontSize = "24px";
-  checkmark.style.fontWeight = "bold";
+  
+  // Position tooltip near mouse cursor but in a more accessible location
+  const tooltip = componentTooltip.firstElementChild;
+  const mouseX = event.clientX;
+  const mouseY = event.clientY;
+  
+  // Calculate position with boundary checks - position below and to the right for easier access
+  let left = mouseX + 15;
+  let top = mouseY + 15;
+  
+  // Check right boundary
+  if (left + 220 > window.innerWidth) {
+    left = mouseX - 235; // Position to the left
+  }
+  
+  // Check bottom boundary
+  if (top + 80 > window.innerHeight) {
+    top = mouseY - 95; // Position above
+  }
+  
+  // Ensure minimum distance from edges
+  left = Math.max(10, Math.min(left, window.innerWidth - 230));
+  top = Math.max(10, Math.min(top, window.innerHeight - 90));
+  
+  tooltip.style.left = left + 'px';
+  tooltip.style.top = top + 'px';
+  
+  document.body.appendChild(componentTooltip);
+  
+  // Add mouse event handlers to tooltip to keep it stable
+  const tooltipDiv = componentTooltip.firstElementChild;
+  tooltipDiv.addEventListener('mouseenter', function() {
+    // Keep tooltip stable when hovering over it
+    clearTimeout(window.tooltipRemovalTimeout);
+  });
+  
+  tooltipDiv.addEventListener('mouseleave', function() {
+    // Remove tooltip when leaving it (with small delay)
+    window.tooltipRemovalTimeout = setTimeout(() => {
+      if (isSelecting) {
+        removeHighlight();
+        removeTooltip();
+      }
+    }, 200);
+  });
+  
+  // Add click handler to the select button
+  const selectBtn = document.getElementById('sumo-select-component-btn');
+  if (selectBtn) {
+    selectBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log(`Button clicked - selecting component: ${componentName}`);
+      console.log(`Component element:`, componentElement);
+      console.log(`Module owner:`, moduleOwner);
+      
+      try {
+        // Capture screenshot of the selected component
+        captureComponentScreenshot(componentElement, componentName, moduleOwner);
+      } catch (error) {
+        console.error('Error in button click handler:', error);
+        showToast('Error selecting component. Please try again.', 'error');
+      }
+    });
+  }
+}
 
-  document.body.appendChild(checkmark);
+// Remove tooltip
+function removeTooltip() {
+  // Clear any pending removal timeout
+  if (window.tooltipRemovalTimeout) {
+    clearTimeout(window.tooltipRemovalTimeout);
+    window.tooltipRemovalTimeout = null;
+  }
+  
+  if (componentTooltip) {
+    componentTooltip.remove();
+    componentTooltip = null;
+  }
+}
 
+// Remove highlight from element
+function removeHighlight() {
+  if (highlightedElement) {
+    const element = highlightedElement;
+    const originalStyles = element._originalStyles;
+    
+    if (originalStyles) {
+      // Restore original styles
+      element.style.outline = originalStyles.outline || '';
+      element.style.outlineOffset = originalStyles.outlineOffset || '';
+      element.style.boxShadow = originalStyles.boxShadow || '';
+      
+      // Clean up stored properties
+      delete element._originalStyles;
+    }
+    
+    highlightedElement = null;
+  }
+}
+
+// Show toast notification
+function showToast(message, type = 'info') {
+  removeToast();
+  
+  toastElement = document.createElement('div');
+  toastElement.innerHTML = `
+    <div style="
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#2196F3'};
+      color: white;
+      padding: 12px 20px;
+      border-radius: 4px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      z-index: 10002;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      max-width: 400px;
+      word-wrap: break-word;
+      animation: slideInRight 0.3s ease-out;
+    ">
+      ${message}
+    </div>
+  `;
+  
+  // Add CSS animation
+  if (!document.getElementById('toast-styles')) {
+    const style = document.createElement('style');
+    style.id = 'toast-styles';
+    style.textContent = `
+      @keyframes slideInRight {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+  
+  document.body.appendChild(toastElement);
+  
+  // Auto remove after 3 seconds
   setTimeout(() => {
-    if (checkmark.parentNode) {
-      checkmark.parentNode.removeChild(checkmark);
-    }
-  }, 500);
+    removeToast();
+  }, 3000);
 }
 
-async function captureSelectedArea(left, top, width, height) {
-  try {
-    // Use html2canvas to capture the selected area
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-
-    canvas.width = width;
-    canvas.height = height;
-
-    // For now, create a placeholder screenshot
-    // In a real implementation, you would use html2canvas or similar
-    ctx.fillStyle = "#f0f0f0";
-    ctx.fillRect(0, 0, width, height);
-    ctx.fillStyle = "#333";
-    ctx.font = "14px Arial";
-    ctx.fillText("Screenshot Placeholder", 10, 30);
-    ctx.fillText(`Area: ${width}x${height}`, 10, 50);
-    ctx.fillText(`Position: ${left}, ${top}`, 10, 70);
-
-    return canvas.toDataURL("image/png");
-  } catch (error) {
-    console.error("Error capturing screenshot:", error);
-    return null;
+// Remove toast notification
+function removeToast() {
+  if (toastElement) {
+    toastElement.remove();
+    toastElement = null;
   }
 }
 
-function extractOwnerInfo(left, top, width, height) {
-  const elementsInArea = [];
-  let ownerId = null;
-
-  // Get all elements in the selected area
-  const allElements = document.querySelectorAll("*");
-
-  for (const element of allElements) {
+// Capture screenshot of selected component
+async function captureComponentScreenshot(element, componentName, teamOwner) {
+  try {
+    console.log(`📸 Starting screenshot capture for component: ${componentName}`);
+    console.log(`Element:`, element);
+    console.log(`Team owner:`, teamOwner);
+    
+    if (!element) {
+      throw new Error('No element provided for screenshot');
+    }
+    
+    // Get element position and dimensions
     const rect = element.getBoundingClientRect();
-
-    // Check if element is within selected area
-    if (
-      rect.left >= left &&
-      rect.top >= top &&
-      rect.right <= left + width &&
-      rect.bottom <= top + height
-    ) {
-      // Look for data-owner attribute
-      const dataOwner = element.getAttribute("data-owner");
-      if (dataOwner && !ownerId) {
-        ownerId = dataOwner;
-      }
-
-      // Also check parent elements for data-owner
-      let parent = element.parentElement;
-      while (parent && !ownerId) {
-        const parentOwner = parent.getAttribute("data-owner");
-        if (parentOwner) {
-          ownerId = parentOwner;
-          break;
-        }
-        parent = parent.parentElement;
-      }
-
-      elementsInArea.push({
-        tagName: element.tagName,
-        className: element.className,
-        id: element.id,
-        dataOwner: element.getAttribute("data-owner"),
-      });
-    }
-  }
-
-  return {
-    ownerId: ownerId || "unknown",
-    elements: elementsInArea.slice(0, 10), // Limit to first 10 elements
-  };
-}
-
-async function getTeamInfo(ownerId) {
-  try {
-    const ownerInfo = await loadOwnerInfo();
-
-    if (ownerInfo[ownerId]) {
-      return ownerInfo[ownerId];
-    }
-
-    // Fallback for unknown owner
-    return {
-      teamName: "Unknown Team",
-      teamJiraLabel: "Bug Report",
-      managerName: "Unknown Manager",
-      managerId: "unknown@company.com",
-      slackChannel: "#general-bugs",
+    console.log(`Element rect:`, rect);
+    
+    // Create team info based on team owner
+    const teamInfo = {
+      teamName: teamOwner.replace('@', '').split('/')[1] || "Unknown Team",
+      teamJiraLabel: "Component Bug",
+      managerName: "Team Lead",
+      managerId: `${teamOwner.replace('@', '').toLowerCase()}@company.com`,
+      slackChannel: teamOwner,
       slackChannelId: "C0000000000",
     };
+    
+    console.log(`Team info created:`, teamInfo);
+    
+    const elementInfo = {
+      x: rect.left + window.scrollX,
+      y: rect.top + window.scrollY,
+      width: rect.width,
+      height: rect.height,
+      componentName: componentName,
+      teamOwner: teamOwner,
+      teamInfo: teamInfo,
+      url: window.location.href,
+      timestamp: new Date().toISOString(),
+      selector: getElementSelector(element),
+      screenshot: generateComponentScreenshot(rect)
+    };
+    
+    console.log(`Element info created:`, elementInfo);
+    
+    // Stop selection mode
+    stopComponentSelection();
+    
+    console.log(`📤 Sending component data to background script...`);
+    
+    // Check if chrome.runtime is available
+    if (!chrome || !chrome.runtime) {
+      throw new Error('Chrome extension context not available');
+    }
+    
+    // Store component data first (this always works)
+    chrome.storage.local.set({ bugComponentData: elementInfo }, (result) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error saving to storage:', chrome.runtime.lastError);
+        showToast('Error saving component data. Please try again.', 'error');
+        return;
+      } else {
+        console.log('✅ Component data saved to storage');
+        showToast(`Component "${componentName}" selected successfully!`, 'success');
+      }
+    });
+    
+    // Try to notify background script (but don't fail if it doesn't work)
+    try {
+      chrome.runtime.sendMessage({
+        action: 'componentSelected',
+        data: elementInfo
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.log('Background script notification failed (this is OK):', chrome.runtime.lastError.message);
+        } else {
+          console.log('Background script notified successfully:', response);
+        }
+      });
+    } catch (error) {
+      console.log('Could not notify background script (this is OK):', error.message);
+    }
+    
   } catch (error) {
-    console.error("Error getting team info:", error);
+    console.error('❌ Error capturing component screenshot:', error);
+    console.error('Error stack:', error.stack);
+    showToast(`Error: ${error.message}`, 'error');
+    stopComponentSelection();
+  }
+}
+
+// Generate a simple screenshot placeholder for the component
+function generateComponentScreenshot(rect) {
+  try {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    canvas.width = Math.max(200, rect.width);
+    canvas.height = Math.max(100, rect.height);
+    
+    // Create a placeholder screenshot
+    ctx.fillStyle = '#f8f9fa';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Add border
+    ctx.strokeStyle = '#ff0000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, 0, canvas.width, canvas.height);
+    
+    // Add text
+    ctx.fillStyle = '#333';
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Component Screenshot', canvas.width / 2, canvas.height / 2 - 10);
+    ctx.fillText(`${Math.round(rect.width)}x${Math.round(rect.height)}`, canvas.width / 2, canvas.height / 2 + 10);
+    
+    return canvas.toDataURL('image/png');
+  } catch (error) {
+    console.error('Error generating component screenshot:', error);
     return null;
   }
 }
 
-function showToastNotification(teamInfo) {
-  // Remove any existing toast
-  const existingToast = document.getElementById("sumo-toast-notification");
-  if (existingToast) {
-    existingToast.remove();
+// Generate a unique CSS selector for an element
+function getElementSelector(element) {
+  if (element.id) {
+    return `#${element.id}`;
   }
+  
+  if (element.className) {
+    const classes = Array.from(element.classList).join('.');
+    if (classes) {
+      return `.${classes}`;
+    }
+  }
+  
+  // Fallback to tag name with data-bug-logger-id attribute
+  const componentName = element.getAttribute('data-bug-logger-id');
+  if (componentName) {
+    return `${element.tagName.toLowerCase()}[data-bug-logger-id="${componentName}"]`;
+  }
+  
+  return element.tagName.toLowerCase();
+}
 
-  toastElement = document.createElement("div");
-  toastElement.id = "sumo-toast-notification";
-  toastElement.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    background: #28a745;
-    color: white;
-    padding: 16px 20px;
-    border-radius: 8px;
-    font-family: 'Segoe UI', sans-serif;
-    font-size: 13px;
-    z-index: 1000000;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-    max-width: 320px;
-    animation: slideInRight 0.3s ease-out;
-  `;
-
-  const closeBtn = document.createElement("button");
-  closeBtn.style.cssText = `
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: none;
-    border: none;
-    color: white;
-    font-size: 16px;
-    cursor: pointer;
-    padding: 0;
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  `;
-  closeBtn.innerHTML = "×";
-  closeBtn.onclick = () => toastElement.remove();
-
-  const startRecordingBtn = document.createElement("button");
-  startRecordingBtn.style.cssText = `
-    background: rgba(255, 255, 255, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    color: white;
-    padding: 6px 12px;
-    border-radius: 4px;
-    font-size: 12px;
-    cursor: pointer;
-    margin-top: 12px;
-    width: 100%;
-    transition: background 0.2s ease;
-  `;
-  startRecordingBtn.textContent = "🎬 Start Recording";
-  startRecordingBtn.onmouseover = () => {
-    startRecordingBtn.style.background = "rgba(255, 255, 255, 0.3)";
-  };
-  startRecordingBtn.onmouseout = () => {
-    startRecordingBtn.style.background = "rgba(255, 255, 255, 0.2)";
-  };
-  startRecordingBtn.onclick = async () => {
-    // Show loading state
-    startRecordingBtn.textContent = "⏳ Starting Recording...";
-    startRecordingBtn.style.background = "rgba(255, 255, 255, 0.1)";
-    startRecordingBtn.disabled = true;
-
-    try {
-      // Send message to start recording
-      const response = await chrome.runtime.sendMessage({
-        action: "openPopupToStep2",
-      });
-
-      if (response.success) {
-        // Update toast to show success
-        toastElement.innerHTML = `
-          <div style="font-weight: 600; margin-bottom: 8px; color: #28a745;">🎬 Recording Started!</div>
-          <div style="font-size: 12px; line-height: 1.4;">
-            <div>✅ Network monitoring active</div>
-            <div>✅ Console logging active</div>
-            <div style="margin-top: 8px; font-style: italic;">
-              Open the extension popup to continue...
-            </div>
-          </div>
-        `;
-
-        // Auto-hide toast after 3 seconds
-        setTimeout(() => {
-          if (toastElement && toastElement.parentNode) {
-            toastElement.remove();
+// Helper function to send messages with retry logic
+function sendMessageWithRetry(message, maxRetries = 3, delay = 500) {
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    
+    function attemptSend() {
+      attempts++;
+      console.log(`Attempt ${attempts}/${maxRetries} to send message:`, message);
+      
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error(`Attempt ${attempts} failed:`, chrome.runtime.lastError);
+            
+            if (attempts < maxRetries) {
+              console.log(`Retrying in ${delay}ms...`);
+              setTimeout(attemptSend, delay);
+            } else {
+              reject(new Error(`Failed after ${maxRetries} attempts: ${chrome.runtime.lastError.message}`));
+            }
+          } else {
+            console.log(`Message sent successfully on attempt ${attempts}`);
+            resolve(response);
           }
-        }, 3000);
-      } else {
-        throw new Error("Failed to start recording");
-      }
-    } catch (error) {
-      console.error("Error starting recording:", error);
-      startRecordingBtn.textContent = "❌ Failed - Try Again";
-      startRecordingBtn.style.background = "rgba(220, 53, 69, 0.8)";
-      setTimeout(() => {
-        startRecordingBtn.textContent = "🎬 Start Recording";
-        startRecordingBtn.style.background = "rgba(255, 255, 255, 0.2)";
-        startRecordingBtn.disabled = false;
-      }, 2000);
-    }
-  };
-
-  const content = `
-    <div style="font-weight: 600; margin-bottom: 8px;">✅ Bug Area Captured!</div>
-    <div style="font-size: 12px; line-height: 1.4;">
-      <div><strong>👥 Team:</strong> ${teamInfo?.teamName || "Unknown"}</div>
-      <div><strong>👤 Manager:</strong> ${
-        teamInfo?.managerName || "Unknown"
-      }</div>
-      <div><strong>📋 Jira Label:</strong> ${
-        teamInfo?.teamJiraLabel || "Unknown"
-      }</div>
-      <div><strong>💬 Slack:</strong> ${
-        teamInfo?.slackChannel || "Unknown"
-      }</div>
-    </div>
-    <div style="margin-top: 8px; font-size: 11px; opacity: 0.9;">
-      Ready to record reproducible steps?
-    </div>
-  `;
-
-  toastElement.innerHTML = content;
-  toastElement.appendChild(closeBtn);
-  toastElement.appendChild(startRecordingBtn);
-
-  // Add animation styles
-  const style = document.createElement("style");
-  style.textContent = `
-    @keyframes slideInRight {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-  `;
-  document.head.appendChild(style);
-
-  document.body.appendChild(toastElement);
-
-  // Auto-dismiss after 5 seconds
-  setTimeout(() => {
-    if (toastElement && toastElement.parentNode) {
-      toastElement.style.animation = "slideInRight 0.3s ease-out reverse";
-      setTimeout(() => {
-        if (toastElement.parentNode) {
-          toastElement.remove();
+        });
+      } catch (error) {
+        console.error(`Attempt ${attempts} threw error:`, error);
+        
+        if (attempts < maxRetries) {
+          console.log(`Retrying in ${delay}ms...`);
+          setTimeout(attemptSend, delay);
+        } else {
+          reject(error);
         }
-      }, 300);
+      }
     }
-  }, 5000);
+    
+    attemptSend();
+  });
 }
 
-function cleanupSelection() {
-  isSelecting = false;
-
-  // Remove event listeners
-  document.removeEventListener("mousedown", handleMouseDown);
-  document.removeEventListener("mousemove", handleMouseMove);
-  document.removeEventListener("mouseup", handleMouseUp);
-  document.removeEventListener("keydown", handleKeyDown);
-
-  // Remove overlay
-  if (selectionOverlay) {
-    selectionOverlay.remove();
-    selectionOverlay = null;
+// Clean up when page unloads
+window.addEventListener('beforeunload', () => {
+  if (isSelecting) {
+    stopComponentSelection();
   }
+});
 
-  // Remove selection box
-  if (selectionBox) {
-    selectionBox.remove();
-    selectionBox = null;
-  }
-
-  // Remove instructions banner
-  const banner = document.getElementById("sumo-instructions-banner");
-  if (banner) {
-    banner.remove();
-  }
-
-  // Remove coordinates tooltip
-  const tooltip = document.getElementById("sumo-coordinates-tooltip");
-  if (tooltip) {
-    tooltip.remove();
-  }
-}
-
-// Clean up on page unload
-window.addEventListener("beforeunload", cleanupSelection);
+console.log("Sumo Bug Logger content script initialized");

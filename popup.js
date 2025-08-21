@@ -63,7 +63,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let recordingStartTime = null;
   let timerInterval = null;
   let currentStep = 1;
-  let bugRegionData = null;
+  let bugComponentData = null;
   let networkData = [];
   let consoleData = [];
   let videoBlob = null;
@@ -135,7 +135,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Event Listeners
-  selectRegionBtn.addEventListener("click", handleRegionSelection);
+  selectRegionBtn.addEventListener("click", handleComponentSelection);
   recordNetworkBtn.addEventListener("click", handleRecording);
   reportBugBtn.addEventListener("click", handleReportBug);
   clearDataBtn.addEventListener("click", showClearDataModal);
@@ -158,12 +158,12 @@ document.addEventListener("DOMContentLoaded", () => {
   downloadHar.addEventListener("click", downloadHarFile);
   downloadLogs.addEventListener("click", downloadLogsFile);
 
-  // Region Selection Handler
-  async function handleRegionSelection() {
+  // Component Selection Handler
+  async function handleComponentSelection() {
     try {
-      updateStatusIndicator("processing", "Selecting Region");
-      step1Status.textContent = "Draw a rectangle around the bug on the page";
-      selectRegionBtn.textContent = "Selection Mode Active...";
+      updateStatusIndicator("processing", "Selecting Component");
+      step1Status.textContent = "Hover over components with data-component attributes and click to select";
+      selectRegionBtn.textContent = "Component Selection Active...";
       selectRegionBtn.className = "button warning-btn";
       selectRegionBtn.disabled = true;
 
@@ -176,23 +176,23 @@ document.addEventListener("DOMContentLoaded", () => {
       // Wait for injection to complete
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Start region selection
+      // Start component selection
       const response = await chrome.tabs.sendMessage(currentTabId, {
-        action: "startRegionSelection",
+        action: "startComponentSelection",
       });
 
       if (response && response.success) {
         // Close popup to allow user interaction
         setTimeout(() => window.close(), 1000);
       } else {
-        throw new Error("Failed to start region selection");
+        throw new Error("Failed to start component selection");
       }
     } catch (error) {
-      console.error("Error starting region selection:", error);
+      console.error("Error starting component selection:", error);
       updateStatusIndicator("error", "Selection Failed");
       step1Status.textContent =
         "Error: Could not start selection. Please refresh and try again.";
-      selectRegionBtn.textContent = "Select Bug Area";
+      selectRegionBtn.textContent = "Select Buggy Component";
       selectRegionBtn.className = "button primary-btn";
       selectRegionBtn.disabled = false;
     }
@@ -384,7 +384,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Collect all data
       const bugReport = {
-        bugRegionData: bugRegionData,
+        bugComponentData: bugComponentData,
         networkData: networkData,
         consoleData: consoleData,
         videoBlob: videoBlob,
@@ -435,7 +435,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Reset UI state
       currentStep = 1;
-      bugRegionData = null;
+      bugComponentData = null;
       networkData = [];
       consoleData = [];
       videoBlob = null;
@@ -447,7 +447,7 @@ document.addEventListener("DOMContentLoaded", () => {
       stepsToReproduce.value = "";
 
       // Reset button states
-      selectRegionBtn.textContent = "📍 Select Bug Area";
+      selectRegionBtn.textContent = "🎯 Select Buggy Component";
       selectRegionBtn.className = "button primary-btn";
       selectRegionBtn.disabled = false;
 
@@ -462,7 +462,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Reset status messages
       step1Status.textContent =
-        "Draw a rectangle around the buggy area on the page";
+        "Click to start selecting the buggy component";
       step2Status.textContent = "Record your steps to reproduce the bug";
 
       // Update UI
@@ -479,19 +479,19 @@ document.addEventListener("DOMContentLoaded", () => {
   async function loadExistingData() {
     try {
       const result = await chrome.storage.local.get([
-        "bugRegionData",
+        "bugComponentData",
         "networkData",
         "consoleData",
         "bugReport",
       ]);
 
-      if (result.bugRegionData) {
-        bugRegionData = result.bugRegionData;
+      if (result.bugComponentData) {
+        bugComponentData = result.bugComponentData;
         currentStep = Math.max(currentStep, 2);
 
         // Show team info
-        if (bugRegionData.teamInfo) {
-          displayTeamInfo(bugRegionData.teamInfo);
+        if (bugComponentData.teamInfo) {
+          displayTeamInfo(bugComponentData.teamInfo);
         }
       }
 
@@ -516,11 +516,11 @@ document.addEventListener("DOMContentLoaded", () => {
     progressIndicator.textContent = `Step ${currentStep} of 3`;
 
     // Update step 1
-    if (bugRegionData) {
-      selectRegionBtn.textContent = "✅ Area Selected";
+    if (bugComponentData) {
+      selectRegionBtn.textContent = "✅ Component Selected";
       selectRegionBtn.className = "button success-btn";
       selectRegionBtn.disabled = true;
-      step1Status.textContent = "Bug area captured successfully";
+      step1Status.textContent = "Bug component captured successfully";
 
       // Enable step 2
       recordNetworkBtn.disabled = false;
@@ -531,7 +531,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (currentStep >= 2) {
       // If we're on step 2 or higher, enable recording button
       recordNetworkBtn.disabled = false;
-      if (!bugRegionData) {
+      if (!bugComponentData) {
         step2Status.textContent =
           "Recording started from toast - capture evidence";
       }
@@ -549,7 +549,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Show/hide info content
-    if (currentStep === 1 && !bugRegionData) {
+    if (currentStep === 1 && !bugComponentData) {
       infoContent.classList.remove("hidden");
     } else {
       infoContent.classList.add("hidden");
@@ -568,10 +568,10 @@ document.addEventListener("DOMContentLoaded", () => {
     evidencePanel.classList.remove("hidden");
 
     // Show screenshot evidence
-    if (bugRegionData && bugRegionData.screenshot) {
+    if (bugComponentData && bugComponentData.screenshot) {
       screenshotEvidence.classList.remove("hidden");
       // Set the thumbnail image
-      screenshotThumbnail.style.backgroundImage = `url(${bugRegionData.screenshot})`;
+      screenshotThumbnail.style.backgroundImage = `url(${bugComponentData.screenshot})`;
       screenshotThumbnail.style.backgroundSize = "cover";
       screenshotThumbnail.style.backgroundPosition = "center";
       screenshotThumbnail.style.backgroundRepeat = "no-repeat";
@@ -625,7 +625,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const isValid =
       bugDescription.value.trim().length > 0 &&
       severityLevel.value !== "" &&
-      (bugRegionData || networkData.length > 0);
+      (bugComponentData || networkData.length > 0);
 
     reportBugBtn.disabled = !isValid;
     return isValid;
@@ -644,10 +644,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Evidence Preview Functions
   function previewScreenshot() {
-    if (bugRegionData && bugRegionData.screenshot) {
+    if (bugComponentData && bugComponentData.screenshot) {
       const newTab = window.open();
       newTab.document.write(
-        `<img src="${bugRegionData.screenshot}" style="max-width: 100%; height: auto;">`
+        `<img src="${bugComponentData.screenshot}" style="max-width: 100%; height: auto;">`
       );
     }
   }
@@ -856,10 +856,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // Listen for storage changes
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === "local") {
-      if (changes.bugRegionData) {
-        bugRegionData = changes.bugRegionData.newValue;
-        if (bugRegionData && bugRegionData.teamInfo) {
-          displayTeamInfo(bugRegionData.teamInfo);
+      if (changes.bugComponentData) {
+        bugComponentData = changes.bugComponentData.newValue;
+        if (bugComponentData && bugComponentData.teamInfo) {
+          displayTeamInfo(bugComponentData.teamInfo);
         }
         currentStep = Math.max(currentStep, 2);
         updateUI();

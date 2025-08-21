@@ -106,8 +106,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log("Background received message:", request);
 
   switch (request.action) {
-    case "regionSelected":
-      handleRegionSelected(request, sendResponse);
+    case "componentSelected":
+      handleComponentSelected(request, sendResponse);
       break;
 
     case "getRecordingState":
@@ -155,30 +155,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true; // Keep message channel open for async responses
 });
 
-// Region Selection Handler
-function handleRegionSelected(request, sendResponse) {
-  console.log("Region selected:", request.data);
+// Component Selection Handler
+function handleComponentSelected(request, sendResponse) {
+  try {
+    console.log("Component selected:", request.data);
 
-  let message = "Bug region selected!";
-  if (request.data.ownerId) {
-    message += ` Owner: ${request.data.ownerId}`;
-  }
-  if (request.data.teamName) {
-    message += ` (${request.data.teamName})`;
-  }
-  if (request.data.managerName) {
-    message += ` - Manager: ${request.data.managerName}`;
-  }
+    let message = "Bug component selected!";
+    if (request.data && request.data.componentName) {
+      message += ` Component: ${request.data.componentName}`;
+    }
+    if (request.data && request.data.teamOwner) {
+      message += ` (${request.data.teamOwner})`;
+    }
 
-  // Show notification
-  chrome.notifications.create({
-    type: "basic",
-    iconUrl: "icons/bug.png",
-    title: "Sumo Bug Logger",
-    message: message,
-  });
+    // Show notification
+    chrome.notifications.create({
+      type: "basic",
+      iconUrl: "icons/bug.png",
+      title: "Sumo Bug Logger",
+      message: message,
+    }, (notificationId) => {
+      if (chrome.runtime.lastError) {
+        console.error('Notification error:', chrome.runtime.lastError);
+      } else {
+        console.log('Notification created:', notificationId);
+      }
+    });
 
-  sendResponse({ success: true });
+    console.log('Sending success response to content script');
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error('Error in handleComponentSelected:', error);
+    sendResponse({ success: false, error: error.message });
+  }
 }
 
 // Recording State Handler
