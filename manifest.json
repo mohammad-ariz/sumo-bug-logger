@@ -16,12 +16,19 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "*://*.sumologic.net/*", 
+    "http://localhost:8443/*",
+    "https://*.atlassian.net/*"],
       "js": ["content.js"],
       "run_at": "document_end"
     }
   ],
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": [
+    "*://*.sumologic.net/*", 
+    "http://localhost:8443/*",
+    "https://*.atlassian.net/*"
+  ],
   "permissions": [
     "activeTab",
     "storage",
