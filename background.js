@@ -89,8 +89,10 @@ if (!chrome.runtime.getManifest().update_url) {
 // Global state management
 let networkRecording = {};
 let consoleRecording = {};
+let videoRecording = {};
 let recordingTabs = new Set();
 let recordingStates = {};
+let recordingTimers = {}; // Background timers for each tab
 
 // Chrome runtime startup
 chrome.runtime.onStartup.addListener(() => {
@@ -130,8 +132,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       handleStopConsoleRecording(request, sendResponse);
       break;
 
+    case "startVideoRecording":
+      handleStartVideoRecording(request, sendResponse);
+      break;
+
+    case "stopVideoRecording":
+      handleStopVideoRecording(request, sendResponse);
+      break;
+
     case "getRecordingStats":
       handleGetRecordingStats(request, sendResponse);
+      break;
+
+    case "getRecordingState":
+      handleGetRecordingState(request, sendResponse);
       break;
 
     case "clearAllData":
@@ -228,8 +242,11 @@ async function handleStartNetworkRecording(request, sendResponse) {
     recordingTabs.add(tabId);
     recordingStates[tabId] = {
       networkRecording: true,
-      startTime: Date.now(),
+      startTime: null, // Don't set start time until video actually starts
+      isRecording: false, // Not fully recording until video starts
     };
+
+    // Don't start timer yet - wait for video recording to actually start
 
     // Ensure we have the network event listener
     if (!chrome.debugger.onEvent.hasListener(onNetworkEvent)) {
@@ -277,6 +294,16 @@ async function handleStopNetworkRecording(request, sendResponse) {
     recordingTabs.delete(tabId);
     if (recordingStates[tabId]) {
       recordingStates[tabId].networkRecording = false;
+
+      // Check if all recordings are stopped for this tab
+      const stillRecording =
+        recordingStates[tabId].consoleRecording ||
+        recordingStates[tabId].videoRecording;
+
+      if (!stillRecording) {
+        recordingStates[tabId].isRecording = false;
+        stopBackgroundTimer(tabId);
+      }
     }
 
     sendResponse({
@@ -305,6 +332,20 @@ async function handleStartConsoleRecording(request, sendResponse) {
 
     if (recordingStates[tabId]) {
       recordingStates[tabId].consoleRecording = true;
+      recordingStates[tabId].isRecording = true;
+      // Set start time if not already set (fallback if video recording failed)
+      if (!recordingStates[tabId].startTime) {
+        recordingStates[tabId].startTime = Date.now();
+        startBackgroundTimer(tabId);
+      }
+    } else {
+      recordingStates[tabId] = {
+        consoleRecording: true,
+        startTime: Date.now(),
+        isRecording: true,
+      };
+      // Start background timer for console recording
+      startBackgroundTimer(tabId);
     }
 
     // Inject console monitoring script
@@ -338,6 +379,16 @@ async function handleStopConsoleRecording(request, sendResponse) {
     delete consoleRecording[tabId];
     if (recordingStates[tabId]) {
       recordingStates[tabId].consoleRecording = false;
+
+      // Check if all recordings are stopped for this tab
+      const stillRecording =
+        recordingStates[tabId].networkRecording ||
+        recordingStates[tabId].videoRecording;
+
+      if (!stillRecording) {
+        recordingStates[tabId].isRecording = false;
+        stopBackgroundTimer(tabId);
+      }
     }
 
     sendResponse({
@@ -350,17 +401,119 @@ async function handleStopConsoleRecording(request, sendResponse) {
   }
 }
 
+// Video Recording Handlers
+async function handleStartVideoRecording(request, sendResponse) {
+  const tabId = request.tabId;
+  const streamId = request.streamId;
+
+  try {
+    console.log("Starting video recording for tab:", tabId);
+
+    // Check if already recording for this tab
+    if (videoRecording[tabId]) {
+      console.log("Already video recording for this tab");
+      sendResponse({ success: true });
+      return;
+    }
+
+    // Store video recording state
+    videoRecording[tabId] = {
+      startTime: Date.now(),
+      streamId: streamId,
+      chunks: [],
+    };
+
+    if (recordingStates[tabId]) {
+      recordingStates[tabId].videoRecording = true;
+      recordingStates[tabId].isRecording = true;
+      // Set start time when video actually starts
+      if (!recordingStates[tabId].startTime) {
+        recordingStates[tabId].startTime = Date.now();
+        // Start background timer when video actually begins
+        startBackgroundTimer(tabId);
+      }
+    } else {
+      recordingStates[tabId] = {
+        videoRecording: true,
+        startTime: Date.now(),
+        isRecording: true,
+      };
+      // Start background timer when video recording starts
+      startBackgroundTimer(tabId);
+    }
+
+    console.log(`Video recording initialized for tab ${tabId}`);
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error("Error starting video recording:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+async function handleStopVideoRecording(request, sendResponse) {
+  const tabId = request.tabId;
+
+  try {
+    console.log("Stopping video recording for tab:", tabId);
+
+    const videoData = videoRecording[tabId];
+    if (!videoData) {
+      console.log("No video recording found for tab:", tabId);
+      sendResponse({ success: false, error: "No recording found" });
+      return;
+    }
+
+    // Clean up video recording state
+    delete videoRecording[tabId];
+    if (recordingStates[tabId]) {
+      recordingStates[tabId].videoRecording = false;
+
+      // Check if all recordings are stopped for this tab
+      const stillRecording =
+        recordingStates[tabId].networkRecording ||
+        recordingStates[tabId].consoleRecording;
+
+      if (!stillRecording) {
+        recordingStates[tabId].isRecording = false;
+        stopBackgroundTimer(tabId);
+      }
+    }
+
+    console.log(`Video recording stopped for tab ${tabId}`);
+    sendResponse({
+      success: true,
+      videoData: videoData,
+    });
+  } catch (error) {
+    console.error("Error stopping video recording:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
 // Recording Stats Handler
 function handleGetRecordingStats(request, sendResponse) {
   const tabId = request.tabId;
   const networkData = networkRecording[tabId];
   const consoleData = consoleRecording[tabId];
+  const videoData = videoRecording[tabId];
 
   let stats = {
     networkCount: 0,
     errorCount: 0,
     warningCount: 0,
+    isRecording: false,
+    startTime: null,
   };
+
+  // Check if any recording is active
+  const recordingState = recordingStates[tabId];
+  if (recordingState) {
+    stats.isRecording =
+      recordingState.networkRecording ||
+      recordingState.consoleRecording ||
+      recordingState.videoRecording;
+    stats.startTime = recordingState.startTime;
+  }
 
   if (networkData) {
     stats.networkCount = networkData.requests.length;
@@ -378,6 +531,79 @@ function handleGetRecordingStats(request, sendResponse) {
   sendResponse(stats);
 }
 
+// Recording State Handler
+function handleGetRecordingState(request, sendResponse) {
+  const tabId = request.tabId;
+  const recordingState = recordingStates[tabId];
+
+  const state = {
+    isRecording: false,
+    networkRecording: false,
+    consoleRecording: false,
+    videoRecording: false,
+  };
+
+  if (recordingState) {
+    state.isRecording =
+      recordingState.networkRecording ||
+      recordingState.consoleRecording ||
+      recordingState.videoRecording;
+    state.networkRecording = recordingState.networkRecording || false;
+    state.consoleRecording = recordingState.consoleRecording || false;
+    state.videoRecording = recordingState.videoRecording || false;
+  }
+
+  sendResponse(state);
+}
+
+// Background Timer Management
+function startBackgroundTimer(tabId) {
+  // Don't start if timer already exists
+  if (recordingTimers[tabId]) {
+    console.log("Timer already running for tab:", tabId);
+    return;
+  }
+
+  console.log("Starting background timer for tab:", tabId);
+
+  // Start a timer that updates every second
+  recordingTimers[tabId] = setInterval(() => {
+    const recordingState = recordingStates[tabId];
+    if (!recordingState || !recordingState.isRecording) {
+      // Recording stopped, clean up timer
+      stopBackgroundTimer(tabId);
+      return;
+    }
+
+    // Timer is running - background can track elapsed time
+    const elapsed = Math.floor((Date.now() - recordingState.startTime) / 1000);
+
+    // Store current elapsed time for popup to use
+    recordingState.elapsedTime = elapsed;
+
+    // Log every 10 seconds for debugging
+    if (elapsed % 10 === 0) {
+      console.log(`Recording timer for tab ${tabId}: ${elapsed}s`);
+    }
+  }, 1000);
+}
+
+function stopBackgroundTimer(tabId) {
+  if (recordingTimers[tabId]) {
+    console.log("Stopping background timer for tab:", tabId);
+    clearInterval(recordingTimers[tabId]);
+    delete recordingTimers[tabId];
+  }
+}
+
+function getRecordingElapsedTime(tabId) {
+  const recordingState = recordingStates[tabId];
+  if (recordingState && recordingState.startTime) {
+    return Math.floor((Date.now() - recordingState.startTime) / 1000);
+  }
+  return 0;
+}
+
 // Clear Data Handler
 async function handleClearAllData(request, sendResponse) {
   try {
@@ -385,6 +611,7 @@ async function handleClearAllData(request, sendResponse) {
     for (const tabId of recordingTabs) {
       try {
         await chrome.debugger.detach({ tabId: parseInt(tabId) });
+        stopBackgroundTimer(tabId); // Stop background timers
       } catch (error) {
         console.warn("Error detaching debugger from tab:", tabId, error);
       }
@@ -393,8 +620,14 @@ async function handleClearAllData(request, sendResponse) {
     // Clear all state
     networkRecording = {};
     consoleRecording = {};
+    videoRecording = {};
     recordingTabs.clear();
     recordingStates = {};
+
+    // Clear all timers
+    for (const tabId in recordingTimers) {
+      stopBackgroundTimer(tabId);
+    }
 
     sendResponse({ success: true });
   } catch (error) {

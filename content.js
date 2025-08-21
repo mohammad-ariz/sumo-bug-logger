@@ -1,101 +1,151 @@
 console.log("Sumo Bug Logger content script loaded on:", window.location.href);
 
-// Import owner info constants - this will be loaded from constants/ownerInfo.js
-let isSelecting = false;
-let selectionOverlay = null;
-let startX = 0,
-  startY = 0;
-let selectionBox = null;
-let toastElement = null;
+// Prevent multiple script injections
+if (window.sumoDebuggerLoaded) {
+  console.log("Content script already loaded, skipping");
+} else {
+  window.sumoDebuggerLoaded = true;
 
-// Signal that content script is ready
-try {
-  chrome.runtime.sendMessage({ action: "contentScriptReady" }).catch(() => {
-    console.log("Background script not ready yet");
-  });
-} catch (error) {
-  console.log("Error signaling ready:", error);
-}
+  // Import owner info constants - this will be loaded from constants/ownerInfo.js
+  let isSelecting = false;
+  let selectionOverlay = null;
+  let startX = 0,
+    startY = 0;
+  let selectionBox = null;
+  let toastElement = null;
 
-// Listen for messages from popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log("Content script received message:", request);
-
-  if (request.action === "startRegionSelection") {
-    try {
-      startRegionSelection();
-      sendResponse({ success: true });
-    } catch (error) {
-      console.error("Error starting region selection:", error);
-      sendResponse({ success: false, error: error.message });
-    }
-  }
-
-  return true;
-});
-
-// Load owner info constants
-async function loadOwnerInfo() {
+  // Signal that content script is ready
   try {
-    const response = await fetch(
-      chrome.runtime.getURL("constants/ownerInfo.js")
-    );
-    const text = await response.text();
-    // Extract the OWNER_INFO object from the file
-    const match = text.match(/const OWNER_INFO = ({[\\s\\S]*?});/);
-    if (match) {
-      return eval("(" + match[1] + ")");
-    }
+    chrome.runtime.sendMessage({ action: "contentScriptReady" }).catch(() => {
+      console.log("Background script not ready yet");
+    });
   } catch (error) {
-    console.warn("Could not load owner info:", error);
+    console.log("Error signaling ready:", error);
   }
 
-  // Fallback data
-  return {
-    hash1: {
-      teamName: "Frontend Team",
-      teamJiraLabel: "UI Issue",
-      managerName: "John Doe",
-      managerId: "john.doe@company.com",
-      slackChannel: "#frontend-bugs",
-      slackChannelId: "C1234567890",
-    },
-    hash2: {
-      teamName: "Backend Team",
-      teamJiraLabel: "API Issue",
-      managerName: "Jane Smith",
-      managerId: "jane.smith@company.com",
-      slackChannel: "#backend-bugs",
-      slackChannelId: "C9876543210",
-    },
-  };
-}
+  // Listen for messages from popup
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    console.log("Content script received message:", request);
 
-function startRegionSelection() {
-  console.log("Starting region selection...");
+    if (request.action === "startRegionSelection") {
+      try {
+        startRegionSelection();
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error("Error starting region selection:", error);
+        sendResponse({ success: false, error: error.message });
+      }
+    }
 
-  // Clean up any existing selection first
-  cleanupSelection();
+    return true;
+  });
 
-  // Create overlay for selection
-  createSelectionOverlay();
+  // Load owner info constants
+  async function loadOwnerInfo() {
+    try {
+      const url = chrome.runtime.getURL("constants/ownerInfo.js");
+      console.log("Loading owner info from:", url);
 
-  isSelecting = true;
+      if (!url || url.includes("invalid")) {
+        console.warn("Invalid extension URL, using fallback data");
+        return getFallbackOwnerInfo();
+      }
 
-  // Add event listeners for selection
-  document.addEventListener("mousedown", handleMouseDown);
-  document.addEventListener("mousemove", handleMouseMove);
-  document.addEventListener("mouseup", handleMouseUp);
-  document.addEventListener("keydown", handleKeyDown);
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
-  // Show instructions banner
-  showInstructionsBanner();
-}
+      const text = await response.text();
+      console.log("Owner info file content loaded, length:", text.length);
 
-function createSelectionOverlay() {
-  selectionOverlay = document.createElement("div");
-  selectionOverlay.id = "sumo-selection-overlay";
-  selectionOverlay.style.cssText = `
+      // Extract the OWNER_INFO object from the file
+      // Try multiple regex patterns to match the file format
+      let match = text.match(/const OWNER_INFO = ({[\s\S]*?});?\s*$/);
+      if (!match) {
+        match = text.match(/OWNER_INFO = ({[\s\S]*?})\s*;?/);
+      }
+      if (!match) {
+        // Try to find just the object part
+        match = text.match(/({[\s\S]*})/);
+      }
+
+      if (match) {
+        console.log("Found OWNER_INFO pattern, parsing...");
+        let objectStr = match[1];
+
+        try {
+          // Instead of eval, use JSON.parse with a safer approach
+          // First, convert JavaScript object syntax to JSON
+          let jsonStr = objectStr
+            .replace(/(\w+):/g, '"$1":') // Add quotes around keys
+            .replace(/'/g, '"') // Replace single quotes with double quotes
+            .replace(/,\s*}/g, "}") // Remove trailing commas
+            .replace(/,\s*]/g, "]"); // Remove trailing commas in arrays
+
+          const result = JSON.parse(jsonStr);
+          console.log("Successfully parsed owner info:", Object.keys(result));
+          return result;
+        } catch (parseError) {
+          console.warn("JSON parse error, using fallback:", parseError);
+          // If JSON parsing fails, return fallback data
+          return getFallbackOwnerInfo();
+        }
+      }
+      throw new Error("Could not find OWNER_INFO pattern in file");
+    } catch (error) {
+      console.warn("Could not load owner info:", error);
+      return getFallbackOwnerInfo();
+    }
+  }
+
+  function getFallbackOwnerInfo() {
+    // Fallback data
+    return {
+      hash1: {
+        teamName: "Frontend Team",
+        teamJiraLabel: "UI Issue",
+        managerName: "John Doe",
+        managerId: "john.doe@company.com",
+        slackChannel: "#frontend-bugs",
+        slackChannelId: "C1234567890",
+      },
+      hash2: {
+        teamName: "Backend Team",
+        teamJiraLabel: "API Issue",
+        managerName: "Jane Smith",
+        managerId: "jane.smith@company.com",
+        slackChannel: "#backend-bugs",
+        slackChannelId: "C9876543210",
+      },
+    };
+  }
+
+  function startRegionSelection() {
+    console.log("Starting region selection...");
+
+    // Clean up any existing selection first
+    cleanupSelection();
+
+    // Create overlay for selection
+    createSelectionOverlay();
+
+    isSelecting = true;
+
+    // Add event listeners for selection
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("keydown", handleKeyDown);
+
+    // Show instructions banner
+    showInstructionsBanner();
+  }
+
+  function createSelectionOverlay() {
+    selectionOverlay = document.createElement("div");
+    selectionOverlay.id = "sumo-selection-overlay";
+    selectionOverlay.style.cssText = `
     position: fixed;
     top: 0;
     left: 0;
@@ -107,13 +157,13 @@ function createSelectionOverlay() {
     pointer-events: all;
   `;
 
-  document.body.appendChild(selectionOverlay);
-}
+    document.body.appendChild(selectionOverlay);
+  }
 
-function showInstructionsBanner() {
-  const banner = document.createElement("div");
-  banner.id = "sumo-instructions-banner";
-  banner.style.cssText = `
+  function showInstructionsBanner() {
+    const banner = document.createElement("div");
+    banner.id = "sumo-instructions-banner";
+    banner.style.cssText = `
     position: fixed;
     top: 20px;
     left: 50%;
@@ -130,12 +180,12 @@ function showInstructionsBanner() {
     animation: slideInTop 0.3s ease-out;
   `;
 
-  banner.textContent =
-    "🎯 Draw a rectangle around the buggy area • Press ESC to cancel";
+    banner.textContent =
+      "🎯 Draw a rectangle around the buggy area • Press ESC to cancel";
 
-  // Add animation styles
-  const style = document.createElement("style");
-  style.textContent = `
+    // Add animation styles
+    const style = document.createElement("style");
+    style.textContent = `
     @keyframes slideInTop {
       from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
       to { transform: translateX(-50%) translateY(0); opacity: 1; }
@@ -146,24 +196,24 @@ function showInstructionsBanner() {
       100% { transform: scale(1); }
     }
   `;
-  document.head.appendChild(style);
+    document.head.appendChild(style);
 
-  document.body.appendChild(banner);
-}
+    document.body.appendChild(banner);
+  }
 
-function handleMouseDown(e) {
-  if (!isSelecting) return;
+  function handleMouseDown(e) {
+    if (!isSelecting) return;
 
-  e.preventDefault();
-  e.stopPropagation();
+    e.preventDefault();
+    e.stopPropagation();
 
-  startX = e.clientX;
-  startY = e.clientY;
+    startX = e.clientX;
+    startY = e.clientY;
 
-  // Create selection box
-  selectionBox = document.createElement("div");
-  selectionBox.id = "sumo-selection-box";
-  selectionBox.style.cssText = `
+    // Create selection box
+    selectionBox = document.createElement("div");
+    selectionBox.id = "sumo-selection-box";
+    selectionBox.style.cssText = `
     position: fixed;
     border: 2px dashed #007bff;
     background: rgba(0, 123, 255, 0.1);
@@ -171,104 +221,106 @@ function handleMouseDown(e) {
     pointer-events: none;
   `;
 
-  document.body.appendChild(selectionBox);
+    document.body.appendChild(selectionBox);
 
-  // Show coordinates tooltip
-  showCoordinatesTooltip(e.clientX, e.clientY);
-}
-
-function handleMouseMove(e) {
-  if (!isSelecting || !selectionBox) return;
-
-  e.preventDefault();
-
-  const currentX = e.clientX;
-  const currentY = e.clientY;
-
-  const left = Math.min(startX, currentX);
-  const top = Math.min(startY, currentY);
-  const width = Math.abs(currentX - startX);
-  const height = Math.abs(currentY - startY);
-
-  selectionBox.style.left = left + "px";
-  selectionBox.style.top = top + "px";
-  selectionBox.style.width = width + "px";
-  selectionBox.style.height = height + "px";
-
-  // Update coordinates tooltip
-  updateCoordinatesTooltip(currentX, currentY);
-}
-
-async function handleMouseUp(e) {
-  if (!isSelecting || !selectionBox) return;
-
-  e.preventDefault();
-  e.stopPropagation();
-
-  const endX = e.clientX;
-  const endY = e.clientY;
-
-  const left = Math.min(startX, endX);
-  const top = Math.min(startY, endY);
-  const width = Math.abs(endX - startX);
-  const height = Math.abs(endY - startY);
-
-  // Minimum selection size
-  if (width < 10 || height < 10) {
-    cleanupSelection();
-    startRegionSelection();
-    return;
+    // Show coordinates tooltip
+    showCoordinatesTooltip(e.clientX, e.clientY);
   }
 
-  // Show completion animation
-  showCompletionAnimation(left, top, width, height);
+  function handleMouseMove(e) {
+    if (!isSelecting || !selectionBox) return;
 
-  // Capture screenshot of the selected area
-  const screenshot = await captureSelectedArea(left, top, width, height);
+    e.preventDefault();
 
-  // Extract owner information from DOM elements in the selected area
-  const ownerInfo = extractOwnerInfo(left, top, width, height);
+    const currentX = e.clientX;
+    const currentY = e.clientY;
 
-  // Get team information from owner hash
-  const teamInfo = await getTeamInfo(ownerInfo.ownerId);
+    const left = Math.min(startX, currentX);
+    const top = Math.min(startY, currentY);
+    const width = Math.abs(currentX - startX);
+    const height = Math.abs(currentY - startY);
 
-  // Save the region data
-  const regionData = {
-    x: left,
-    y: top,
-    width: width,
-    height: height,
-    screenshot: screenshot,
-    ownerId: ownerInfo.ownerId,
-    teamInfo: teamInfo,
-    url: window.location.href,
-    timestamp: Date.now(),
-    elements: ownerInfo.elements,
-  };
+    selectionBox.style.left = left + "px";
+    selectionBox.style.top = top + "px";
+    selectionBox.style.width = width + "px";
+    selectionBox.style.height = height + "px";
 
-  await chrome.storage.local.set({ bugRegionData: regionData });
-
-  // Show toast notification
-  showToastNotification(teamInfo);
-
-  // Clean up selection UI
-  setTimeout(() => {
-    cleanupSelection();
-  }, 1000);
-}
-
-function handleKeyDown(e) {
-  if (e.key === "Escape" && isSelecting) {
-    cleanupSelection();
+    // Update coordinates tooltip
+    updateCoordinatesTooltip(currentX, currentY);
   }
-}
 
-function showCoordinatesTooltip(x, y) {
-  let tooltip = document.getElementById("sumo-coordinates-tooltip");
-  if (!tooltip) {
-    tooltip = document.createElement("div");
-    tooltip.id = "sumo-coordinates-tooltip";
-    tooltip.style.cssText = `
+  async function handleMouseUp(e) {
+    if (!isSelecting || !selectionBox) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const endX = e.clientX;
+    const endY = e.clientY;
+
+    const left = Math.min(startX, endX);
+    const top = Math.min(startY, endY);
+    const width = Math.abs(endX - startX);
+    const height = Math.abs(endY - startY);
+
+    // Minimum selection size
+    if (width < 10 || height < 10) {
+      cleanupSelection();
+      startRegionSelection();
+      return;
+    }
+
+    // Show completion animation
+    showCompletionAnimation(left, top, width, height);
+
+    // Capture screenshot of the selected area
+    const screenshot = await captureSelectedArea(left, top, width, height);
+
+    // Extract owner information from DOM elements in the selected area
+    const ownerInfo = extractOwnerInfo(left, top, width, height);
+
+    // Get team information from owner hash
+    const teamInfo = await getTeamInfo(ownerInfo.ownerId);
+
+    // Save the region data
+    const regionData = {
+      x: left,
+      y: top,
+      width: width,
+      height: height,
+      screenshot: screenshot,
+      ownerId: ownerInfo.ownerId,
+      teamInfo: teamInfo,
+      url: window.location.href,
+      timestamp: Date.now(),
+      elements: ownerInfo.elements,
+    };
+
+    console.log("CONTENT: Saving region data to storage:", regionData);
+    await chrome.storage.local.set({ bugRegionData: regionData });
+    console.log("CONTENT: Region data saved successfully");
+
+    // Show toast notification
+    showToastNotification(teamInfo);
+
+    // Clean up selection UI
+    setTimeout(() => {
+      cleanupSelection();
+    }, 1000);
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === "Escape" && isSelecting) {
+      cleanupSelection();
+    }
+  }
+
+  function showCoordinatesTooltip(x, y) {
+    let tooltip = document.getElementById("sumo-coordinates-tooltip");
+    if (!tooltip) {
+      tooltip = document.createElement("div");
+      tooltip.id = "sumo-coordinates-tooltip";
+      tooltip.style.cssText = `
       position: fixed;
       background: rgba(0, 0, 0, 0.8);
       color: white;
@@ -279,26 +331,26 @@ function showCoordinatesTooltip(x, y) {
       z-index: 1000001;
       pointer-events: none;
     `;
-    document.body.appendChild(tooltip);
-  }
+      document.body.appendChild(tooltip);
+    }
 
-  tooltip.textContent = `X: ${x}, Y: ${y}`;
-  tooltip.style.left = x + 10 + "px";
-  tooltip.style.top = y - 30 + "px";
-}
-
-function updateCoordinatesTooltip(x, y) {
-  const tooltip = document.getElementById("sumo-coordinates-tooltip");
-  if (tooltip) {
     tooltip.textContent = `X: ${x}, Y: ${y}`;
     tooltip.style.left = x + 10 + "px";
     tooltip.style.top = y - 30 + "px";
   }
-}
 
-function showCompletionAnimation(left, top, width, height) {
-  const checkmark = document.createElement("div");
-  checkmark.style.cssText = `
+  function updateCoordinatesTooltip(x, y) {
+    const tooltip = document.getElementById("sumo-coordinates-tooltip");
+    if (tooltip) {
+      tooltip.textContent = `X: ${x}, Y: ${y}`;
+      tooltip.style.left = x + 10 + "px";
+      tooltip.style.top = y - 30 + "px";
+    }
+  }
+
+  function showCompletionAnimation(left, top, width, height) {
+    const checkmark = document.createElement("div");
+    checkmark.style.cssText = `
     position: fixed;
     left: ${left + width / 2 - 20}px;
     top: ${top + height / 2 - 20}px;
@@ -312,128 +364,128 @@ function showCompletionAnimation(left, top, width, height) {
     z-index: 1000001;
     animation: checkmark 0.5s ease-out;
   `;
-  checkmark.innerHTML = "✓";
-  checkmark.style.color = "white";
-  checkmark.style.fontSize = "24px";
-  checkmark.style.fontWeight = "bold";
+    checkmark.innerHTML = "✓";
+    checkmark.style.color = "white";
+    checkmark.style.fontSize = "24px";
+    checkmark.style.fontWeight = "bold";
 
-  document.body.appendChild(checkmark);
+    document.body.appendChild(checkmark);
 
-  setTimeout(() => {
-    if (checkmark.parentNode) {
-      checkmark.parentNode.removeChild(checkmark);
-    }
-  }, 500);
-}
-
-async function captureSelectedArea(left, top, width, height) {
-  try {
-    // Use html2canvas to capture the selected area
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-
-    canvas.width = width;
-    canvas.height = height;
-
-    // For now, create a placeholder screenshot
-    // In a real implementation, you would use html2canvas or similar
-    ctx.fillStyle = "#f0f0f0";
-    ctx.fillRect(0, 0, width, height);
-    ctx.fillStyle = "#333";
-    ctx.font = "14px Arial";
-    ctx.fillText("Screenshot Placeholder", 10, 30);
-    ctx.fillText(`Area: ${width}x${height}`, 10, 50);
-    ctx.fillText(`Position: ${left}, ${top}`, 10, 70);
-
-    return canvas.toDataURL("image/png");
-  } catch (error) {
-    console.error("Error capturing screenshot:", error);
-    return null;
-  }
-}
-
-function extractOwnerInfo(left, top, width, height) {
-  const elementsInArea = [];
-  let ownerId = null;
-
-  // Get all elements in the selected area
-  const allElements = document.querySelectorAll("*");
-
-  for (const element of allElements) {
-    const rect = element.getBoundingClientRect();
-
-    // Check if element is within selected area
-    if (
-      rect.left >= left &&
-      rect.top >= top &&
-      rect.right <= left + width &&
-      rect.bottom <= top + height
-    ) {
-      // Look for data-owner attribute
-      const dataOwner = element.getAttribute("data-owner");
-      if (dataOwner && !ownerId) {
-        ownerId = dataOwner;
+    setTimeout(() => {
+      if (checkmark.parentNode) {
+        checkmark.parentNode.removeChild(checkmark);
       }
+    }, 500);
+  }
 
-      // Also check parent elements for data-owner
-      let parent = element.parentElement;
-      while (parent && !ownerId) {
-        const parentOwner = parent.getAttribute("data-owner");
-        if (parentOwner) {
-          ownerId = parentOwner;
-          break;
+  async function captureSelectedArea(left, top, width, height) {
+    try {
+      // Use html2canvas to capture the selected area
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      canvas.width = width;
+      canvas.height = height;
+
+      // For now, create a placeholder screenshot
+      // In a real implementation, you would use html2canvas or similar
+      ctx.fillStyle = "#f0f0f0";
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = "#333";
+      ctx.font = "14px Arial";
+      ctx.fillText("Screenshot Placeholder", 10, 30);
+      ctx.fillText(`Area: ${width}x${height}`, 10, 50);
+      ctx.fillText(`Position: ${left}, ${top}`, 10, 70);
+
+      return canvas.toDataURL("image/png");
+    } catch (error) {
+      console.error("Error capturing screenshot:", error);
+      return null;
+    }
+  }
+
+  function extractOwnerInfo(left, top, width, height) {
+    const elementsInArea = [];
+    let ownerId = null;
+
+    // Get all elements in the selected area
+    const allElements = document.querySelectorAll("*");
+
+    for (const element of allElements) {
+      const rect = element.getBoundingClientRect();
+
+      // Check if element is within selected area
+      if (
+        rect.left >= left &&
+        rect.top >= top &&
+        rect.right <= left + width &&
+        rect.bottom <= top + height
+      ) {
+        // Look for data-owner attribute
+        const dataOwner = element.getAttribute("data-owner");
+        if (dataOwner && !ownerId) {
+          ownerId = dataOwner;
         }
-        parent = parent.parentElement;
+
+        // Also check parent elements for data-owner
+        let parent = element.parentElement;
+        while (parent && !ownerId) {
+          const parentOwner = parent.getAttribute("data-owner");
+          if (parentOwner) {
+            ownerId = parentOwner;
+            break;
+          }
+          parent = parent.parentElement;
+        }
+
+        elementsInArea.push({
+          tagName: element.tagName,
+          className: element.className,
+          id: element.id,
+          dataOwner: element.getAttribute("data-owner"),
+        });
+      }
+    }
+
+    return {
+      ownerId: ownerId || "unknown",
+      elements: elementsInArea.slice(0, 10), // Limit to first 10 elements
+    };
+  }
+
+  async function getTeamInfo(ownerId) {
+    try {
+      const ownerInfo = await loadOwnerInfo();
+
+      if (ownerInfo[ownerId]) {
+        return ownerInfo[ownerId];
       }
 
-      elementsInArea.push({
-        tagName: element.tagName,
-        className: element.className,
-        id: element.id,
-        dataOwner: element.getAttribute("data-owner"),
-      });
+      // Fallback for unknown owner
+      return {
+        teamName: "Unknown Team",
+        teamJiraLabel: "Bug Report",
+        managerName: "Unknown Manager",
+        managerId: "unknown@company.com",
+        slackChannel: "#general-bugs",
+        slackChannelId: "C0000000000",
+      };
+    } catch (error) {
+      console.error("Error getting team info:", error);
+      return null;
     }
   }
 
-  return {
-    ownerId: ownerId || "unknown",
-    elements: elementsInArea.slice(0, 10), // Limit to first 10 elements
-  };
-}
-
-async function getTeamInfo(ownerId) {
-  try {
-    const ownerInfo = await loadOwnerInfo();
-
-    if (ownerInfo[ownerId]) {
-      return ownerInfo[ownerId];
+  function showToastNotification(teamInfo) {
+    // Remove any existing toast
+    const existingToast = document.getElementById("sumo-toast-notification");
+    if (existingToast) {
+      existingToast.remove();
     }
 
-    // Fallback for unknown owner
-    return {
-      teamName: "Unknown Team",
-      teamJiraLabel: "Bug Report",
-      managerName: "Unknown Manager",
-      managerId: "unknown@company.com",
-      slackChannel: "#general-bugs",
-      slackChannelId: "C0000000000",
-    };
-  } catch (error) {
-    console.error("Error getting team info:", error);
-    return null;
-  }
-}
-
-function showToastNotification(teamInfo) {
-  // Remove any existing toast
-  const existingToast = document.getElementById("sumo-toast-notification");
-  if (existingToast) {
-    existingToast.remove();
-  }
-
-  toastElement = document.createElement("div");
-  toastElement.id = "sumo-toast-notification";
-  toastElement.style.cssText = `
+    toastElement = document.createElement("div");
+    toastElement.id = "sumo-toast-notification";
+    toastElement.style.cssText = `
     position: fixed;
     top: 20px;
     right: 20px;
@@ -449,8 +501,8 @@ function showToastNotification(teamInfo) {
     animation: slideInRight 0.3s ease-out;
   `;
 
-  const closeBtn = document.createElement("button");
-  closeBtn.style.cssText = `
+    const closeBtn = document.createElement("button");
+    closeBtn.style.cssText = `
     position: absolute;
     top: 8px;
     right: 8px;
@@ -466,11 +518,11 @@ function showToastNotification(teamInfo) {
     align-items: center;
     justify-content: center;
   `;
-  closeBtn.innerHTML = "×";
-  closeBtn.onclick = () => toastElement.remove();
+    closeBtn.innerHTML = "×";
+    closeBtn.onclick = () => toastElement.remove();
 
-  const startRecordingBtn = document.createElement("button");
-  startRecordingBtn.style.cssText = `
+    const startRecordingBtn = document.createElement("button");
+    startRecordingBtn.style.cssText = `
     background: rgba(255, 255, 255, 0.2);
     border: 1px solid rgba(255, 255, 255, 0.3);
     color: white;
@@ -482,28 +534,28 @@ function showToastNotification(teamInfo) {
     width: 100%;
     transition: background 0.2s ease;
   `;
-  startRecordingBtn.textContent = "🎬 Start Recording";
-  startRecordingBtn.onmouseover = () => {
-    startRecordingBtn.style.background = "rgba(255, 255, 255, 0.3)";
-  };
-  startRecordingBtn.onmouseout = () => {
-    startRecordingBtn.style.background = "rgba(255, 255, 255, 0.2)";
-  };
-  startRecordingBtn.onclick = async () => {
-    // Show loading state
-    startRecordingBtn.textContent = "⏳ Starting Recording...";
-    startRecordingBtn.style.background = "rgba(255, 255, 255, 0.1)";
-    startRecordingBtn.disabled = true;
+    startRecordingBtn.textContent = "🎬 Start Recording";
+    startRecordingBtn.onmouseover = () => {
+      startRecordingBtn.style.background = "rgba(255, 255, 255, 0.3)";
+    };
+    startRecordingBtn.onmouseout = () => {
+      startRecordingBtn.style.background = "rgba(255, 255, 255, 0.2)";
+    };
+    startRecordingBtn.onclick = async () => {
+      // Show loading state
+      startRecordingBtn.textContent = "⏳ Starting Recording...";
+      startRecordingBtn.style.background = "rgba(255, 255, 255, 0.1)";
+      startRecordingBtn.disabled = true;
 
-    try {
-      // Send message to start recording
-      const response = await chrome.runtime.sendMessage({
-        action: "openPopupToStep2",
-      });
+      try {
+        // Send message to start recording
+        const response = await chrome.runtime.sendMessage({
+          action: "openPopupToStep2",
+        });
 
-      if (response.success) {
-        // Update toast to show success
-        toastElement.innerHTML = `
+        if (response.success) {
+          // Update toast to show success
+          toastElement.innerHTML = `
           <div style="font-weight: 600; margin-bottom: 8px; color: #28a745;">🎬 Recording Started!</div>
           <div style="font-size: 12px; line-height: 1.4;">
             <div>✅ Network monitoring active</div>
@@ -514,28 +566,28 @@ function showToastNotification(teamInfo) {
           </div>
         `;
 
-        // Auto-hide toast after 3 seconds
+          // Auto-hide toast after 3 seconds
+          setTimeout(() => {
+            if (toastElement && toastElement.parentNode) {
+              toastElement.remove();
+            }
+          }, 3000);
+        } else {
+          throw new Error("Failed to start recording");
+        }
+      } catch (error) {
+        console.error("Error starting recording:", error);
+        startRecordingBtn.textContent = "❌ Failed - Try Again";
+        startRecordingBtn.style.background = "rgba(220, 53, 69, 0.8)";
         setTimeout(() => {
-          if (toastElement && toastElement.parentNode) {
-            toastElement.remove();
-          }
-        }, 3000);
-      } else {
-        throw new Error("Failed to start recording");
+          startRecordingBtn.textContent = "🎬 Start Recording";
+          startRecordingBtn.style.background = "rgba(255, 255, 255, 0.2)";
+          startRecordingBtn.disabled = false;
+        }, 2000);
       }
-    } catch (error) {
-      console.error("Error starting recording:", error);
-      startRecordingBtn.textContent = "❌ Failed - Try Again";
-      startRecordingBtn.style.background = "rgba(220, 53, 69, 0.8)";
-      setTimeout(() => {
-        startRecordingBtn.textContent = "🎬 Start Recording";
-        startRecordingBtn.style.background = "rgba(255, 255, 255, 0.2)";
-        startRecordingBtn.disabled = false;
-      }, 2000);
-    }
-  };
+    };
 
-  const content = `
+    const content = `
     <div style="font-weight: 600; margin-bottom: 8px;">✅ Bug Area Captured!</div>
     <div style="font-size: 12px; line-height: 1.4;">
       <div><strong>👥 Team:</strong> ${teamInfo?.teamName || "Unknown"}</div>
@@ -554,68 +606,69 @@ function showToastNotification(teamInfo) {
     </div>
   `;
 
-  toastElement.innerHTML = content;
-  toastElement.appendChild(closeBtn);
-  toastElement.appendChild(startRecordingBtn);
+    toastElement.innerHTML = content;
+    toastElement.appendChild(closeBtn);
+    toastElement.appendChild(startRecordingBtn);
 
-  // Add animation styles
-  const style = document.createElement("style");
-  style.textContent = `
+    // Add animation styles
+    const style = document.createElement("style");
+    style.textContent = `
     @keyframes slideInRight {
       from { transform: translateX(100%); opacity: 0; }
       to { transform: translateX(0); opacity: 1; }
     }
   `;
-  document.head.appendChild(style);
+    document.head.appendChild(style);
 
-  document.body.appendChild(toastElement);
+    document.body.appendChild(toastElement);
 
-  // Auto-dismiss after 5 seconds
-  setTimeout(() => {
-    if (toastElement && toastElement.parentNode) {
-      toastElement.style.animation = "slideInRight 0.3s ease-out reverse";
-      setTimeout(() => {
-        if (toastElement.parentNode) {
-          toastElement.remove();
-        }
-      }, 300);
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+      if (toastElement && toastElement.parentNode) {
+        toastElement.style.animation = "slideInRight 0.3s ease-out reverse";
+        setTimeout(() => {
+          if (toastElement.parentNode) {
+            toastElement.remove();
+          }
+        }, 300);
+      }
+    }, 5000);
+  }
+
+  function cleanupSelection() {
+    isSelecting = false;
+
+    // Remove event listeners
+    document.removeEventListener("mousedown", handleMouseDown);
+    document.removeEventListener("mousemove", handleMouseMove);
+    document.removeEventListener("mouseup", handleMouseUp);
+    document.removeEventListener("keydown", handleKeyDown);
+
+    // Remove overlay
+    if (selectionOverlay) {
+      selectionOverlay.remove();
+      selectionOverlay = null;
     }
-  }, 5000);
-}
 
-function cleanupSelection() {
-  isSelecting = false;
+    // Remove selection box
+    if (selectionBox) {
+      selectionBox.remove();
+      selectionBox = null;
+    }
 
-  // Remove event listeners
-  document.removeEventListener("mousedown", handleMouseDown);
-  document.removeEventListener("mousemove", handleMouseMove);
-  document.removeEventListener("mouseup", handleMouseUp);
-  document.removeEventListener("keydown", handleKeyDown);
+    // Remove instructions banner
+    const banner = document.getElementById("sumo-instructions-banner");
+    if (banner) {
+      banner.remove();
+    }
 
-  // Remove overlay
-  if (selectionOverlay) {
-    selectionOverlay.remove();
-    selectionOverlay = null;
+    // Remove coordinates tooltip
+    const tooltip = document.getElementById("sumo-coordinates-tooltip");
+    if (tooltip) {
+      tooltip.remove();
+    }
   }
 
-  // Remove selection box
-  if (selectionBox) {
-    selectionBox.remove();
-    selectionBox = null;
-  }
-
-  // Remove instructions banner
-  const banner = document.getElementById("sumo-instructions-banner");
-  if (banner) {
-    banner.remove();
-  }
-
-  // Remove coordinates tooltip
-  const tooltip = document.getElementById("sumo-coordinates-tooltip");
-  if (tooltip) {
-    tooltip.remove();
-  }
-}
-
-// Clean up on page unload
-window.addEventListener("beforeunload", cleanupSelection);
+  // Clean up on page unload
+  window.addEventListener("beforeunload", cleanupSelection);
+} // End of sumoDebuggerLoaded check
