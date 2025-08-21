@@ -134,6 +134,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (stats && stats.startTime) {
           recordingStartTime = stats.startTime;
+          console.log(
+            "Restored recording start time:",
+            new Date(recordingStartTime)
+          );
+        } else {
+          // Fallback: use current time minus a reasonable default
+          recordingStartTime = Date.now() - 10000; // Assume 10 seconds ago
+          console.log(
+            "No start time found, using fallback:",
+            new Date(recordingStartTime)
+          );
         }
 
         startRecordingUI(true); // Preserve start time
@@ -286,52 +297,19 @@ document.addEventListener("DOMContentLoaded", () => {
       throw new Error("Failed to start network recording");
     }
 
-    // Start video recording - get stream first, then pass to background
+    // Start video recording in content script (persists when popup closes)
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { mediaSource: "screen" },
-        audio: true,
+      console.log("Starting video recording via content script...");
+
+      const videoResponse = await chrome.tabs.sendMessage(currentTabId, {
+        action: "startVideoRecording",
       });
 
-      // Create a persistent MediaRecorder that will survive popup closure
-      mediaRecorder = new MediaRecorder(stream, { mimeType: "video/webm" });
-      const recordedChunks = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          recordedChunks.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        videoBlob = new Blob(recordedChunks, { type: "video/webm" });
-        stream.getTracks().forEach((track) => track.stop());
-
-        // Save video blob to storage as array buffer for persistence
-        try {
-          const arrayBuffer = await videoBlob.arrayBuffer();
-          await chrome.storage.local.set({
-            videoData: {
-              data: Array.from(new Uint8Array(arrayBuffer)),
-              size: videoBlob.size,
-              type: videoBlob.type,
-              timestamp: Date.now(),
-            },
-          });
-          console.log("Video blob saved to storage");
-
-          // Update UI immediately when video is ready
-          if (currentStep >= 3) {
-            displayEvidencePanel();
-          }
-        } catch (error) {
-          console.warn("Failed to save video blob:", error);
-        }
-      };
-
-      // Store the MediaRecorder globally and start recording
-      window.globalMediaRecorder = mediaRecorder;
-      mediaRecorder.start();
+      if (videoResponse && videoResponse.success) {
+        console.log("Video recording started successfully in content script");
+      } else {
+        throw new Error("Failed to start video recording in content script");
+      }
 
       // Start the timer UI only after video recording actually starts
       startRecordingUI();
@@ -340,7 +318,6 @@ document.addEventListener("DOMContentLoaded", () => {
       await chrome.runtime.sendMessage({
         action: "startVideoRecording",
         tabId: currentTabId,
-        streamId: stream.id,
       });
     } catch (videoError) {
       console.warn("Video recording failed:", videoError);
@@ -349,10 +326,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Start console monitoring
-    await chrome.runtime.sendMessage({
+    console.log("Starting console recording for tab:", currentTabId);
+    const consoleStartResponse = await chrome.runtime.sendMessage({
       action: "startConsoleRecording",
       tabId: currentTabId,
     });
+    console.log("Console recording start response:", consoleStartResponse);
 
     // Note: startRecordingUI() is now called only when video recording actually starts
   }
@@ -375,25 +354,37 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Stop console recording
+    console.log("Stopping console recording for tab:", currentTabId);
     const consoleResponse = await chrome.runtime.sendMessage({
       action: "stopConsoleRecording",
       tabId: currentTabId,
     });
+    console.log("Console recording stop response:", consoleResponse);
 
     if (consoleResponse && consoleResponse.success) {
       consoleData = consoleResponse.consoleLogs || [];
+      console.log("Retrieved console data:", consoleData.length, "logs");
+    } else {
+      console.log("Console recording stop failed or no data");
     }
 
-    // Stop video recording
+    // Stop video recording via content script
     try {
+      console.log("=== STOP VIDEO RECORDING FUNCTION CALLED ===");
+
       // Show processing status immediately
       updateUI();
       updateStatusIndicator("processing", "Processing Video");
 
-      // Check if we have a global MediaRecorder (for persistent recording)
-      const globalRecorder = window.globalMediaRecorder || mediaRecorder;
-      if (globalRecorder && globalRecorder.state === "recording") {
-        globalRecorder.stop();
+      // Stop video recording in content script
+      const videoResponse = await chrome.tabs.sendMessage(currentTabId, {
+        action: "stopVideoRecording",
+      });
+
+      if (videoResponse && videoResponse.success) {
+        console.log("Video recording stopped successfully in content script");
+      } else {
+        console.error("Failed to stop video recording in content script");
       }
 
       // Notify background script that video recording stopped
@@ -401,21 +392,6 @@ document.addEventListener("DOMContentLoaded", () => {
         action: "stopVideoRecording",
         tabId: currentTabId,
       });
-
-      // Try to get video from storage if popup was closed/reopened
-      const storedVideo = await chrome.storage.local.get(["videoData"]);
-      if (storedVideo.videoData && !videoBlob) {
-        // Recreate blob from stored data
-        try {
-          const uint8Array = new Uint8Array(storedVideo.videoData.data);
-          videoBlob = new Blob([uint8Array], {
-            type: storedVideo.videoData.type || "video/webm",
-          });
-          console.log("Restored video blob during stop recording");
-        } catch (error) {
-          console.warn("Could not restore video blob:", error);
-        }
-      }
     } catch (videoError) {
       console.warn("Error stopping video recording:", videoError);
     }
@@ -433,11 +409,21 @@ document.addEventListener("DOMContentLoaded", () => {
     updateStatusIndicator("ready", "Recording Complete");
   }
   function startRecordingUI(preserveStartTime = false) {
+    console.log("Starting recording UI, preserveStartTime:", preserveStartTime);
     isRecording = true;
 
     // Only set new start time if not preserving existing one
     if (!preserveStartTime || !recordingStartTime) {
       recordingStartTime = Date.now();
+      console.log(
+        "Set new recording start time:",
+        new Date(recordingStartTime)
+      );
+    } else {
+      console.log(
+        "Preserving existing start time:",
+        new Date(recordingStartTime)
+      );
     }
 
     recordNetworkBtn.textContent = "⏹️ Stop Recording";
@@ -447,11 +433,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Clear any existing timer before starting new one
     if (timerInterval) {
+      console.log("Clearing existing timer interval");
       clearInterval(timerInterval);
     }
 
     // Start timer
+    console.log("Starting timer interval");
     timerInterval = setInterval(updateRecordingTimer, 1000);
+
+    // Immediately update timer once
+    updateRecordingTimer();
 
     // Start counters update
     setInterval(updateRecordingCounters, 2000);
@@ -474,7 +465,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function updateRecordingTimer() {
-    if (!isRecording) return;
+    if (!isRecording) {
+      console.log("Timer update called but not recording");
+      return;
+    }
 
     try {
       // Get elapsed time from background script
@@ -490,8 +484,12 @@ document.addEventListener("DOMContentLoaded", () => {
           .padStart(2, "0");
         const seconds = (elapsed % 60).toString().padStart(2, "0");
         recordingTimer.textContent = `${minutes}:${seconds}`;
+        console.log("Timer updated from background:", `${minutes}:${seconds}`);
+      } else {
+        throw new Error("No background stats available");
       }
     } catch (error) {
+      console.log("Background timer failed, using fallback:", error.message);
       // Fallback to local calculation if background call fails
       if (recordingStartTime) {
         const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
@@ -500,6 +498,10 @@ document.addEventListener("DOMContentLoaded", () => {
           .padStart(2, "0");
         const seconds = (elapsed % 60).toString().padStart(2, "0");
         recordingTimer.textContent = `${minutes}:${seconds}`;
+        console.log("Timer updated from fallback:", `${minutes}:${seconds}`);
+      } else {
+        console.error("No recording start time available for timer");
+        recordingTimer.textContent = "00:00";
       }
     }
   }
@@ -667,8 +669,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (result.consoleData && result.consoleData.length > 0) {
+        console.log("Restoring console data from storage:", result.consoleData.length, "logs");
         consoleData = result.consoleData;
         currentStep = Math.max(currentStep, 3);
+      } else {
+        console.log("No console data found in storage");
       }
 
       // Restore video blob if available
@@ -821,63 +826,77 @@ document.addEventListener("DOMContentLoaded", () => {
       downloadBtn.style.opacity = "0.5";
       downloadBtn.style.cursor = "not-allowed";
     } else {
-      // Try to restore video from storage
-      console.log("Trying to restore video from storage...");
-      chrome.storage.local.get(["videoData"]).then((result) => {
-        console.log("Storage result for videoData:", result);
-        if (result.videoData && result.videoData.data) {
-          console.log(
-            "Found video data in storage, size:",
-            result.videoData.data.length
-          );
-          document.getElementById("videoDuration").textContent =
-            "🔄 Loading video...";
-          const downloadBtn = document.getElementById("downloadVideo");
-          downloadBtn.disabled = true;
-          downloadBtn.textContent = "⏳ Loading...";
-          downloadBtn.style.opacity = "0.5";
+      // Check if video is available in content script
+      console.log("Trying to restore video from content script...");
 
-          // Restore the video blob immediately
-          try {
-            const uint8Array = new Uint8Array(result.videoData.data);
-            videoBlob = new Blob([uint8Array], {
-              type: result.videoData.type || "video/webm",
-            });
-            console.log(
-              "Video blob restored successfully, size:",
-              videoBlob.size
-            );
+      // Async function to handle video restoration
+      (async () => {
+        try {
+          console.log("Current tab ID:", currentTabId);
 
-            // Update UI immediately
-            const sizeInMB = (videoBlob.size / (1024 * 1024)).toFixed(2);
+          console.log("Sending getVideoBlob message to content script...");
+          const response = await chrome.tabs.sendMessage(currentTabId, {
+            action: "getVideoBlob",
+          });
+
+          console.log("Content script response:", response);
+
+          if (response && response.success && response.hasVideo) {
+            console.log("Content script has video blob, size:", response.size);
+
+            // Show video is available
+            const sizeInMB = (response.size / (1024 * 1024)).toFixed(2);
             document.getElementById(
               "videoDuration"
             ).textContent = `${sizeInMB} MB video file`;
+
+            const downloadBtn = document.getElementById("downloadVideo");
             downloadBtn.disabled = false;
             downloadBtn.textContent = "⬇️ Download";
             downloadBtn.style.opacity = "1";
             downloadBtn.style.cursor = "pointer";
-          } catch (error) {
-            console.warn("Could not restore video blob in display:", error);
-            document.getElementById("videoDuration").textContent =
-              "No video recorded";
-            downloadBtn.disabled = true;
-            downloadBtn.textContent = "⬇️ Download";
-            downloadBtn.style.opacity = "0.5";
-            downloadBtn.style.cursor = "not-allowed";
+          } else {
+            throw new Error("No video available in content script");
           }
-        } else {
-          // No video data available
-          console.log("No video data found in storage");
-          document.getElementById("videoDuration").textContent =
-            "No video recorded";
-          const downloadBtn = document.getElementById("downloadVideo");
-          downloadBtn.disabled = true;
-          downloadBtn.textContent = "⬇️ Download";
-          downloadBtn.style.opacity = "0.5";
-          downloadBtn.style.cursor = "not-allowed";
+        } catch (error) {
+          console.log("Could not get video from content script:", error);
+
+          // Fallback: Check storage for metadata only
+          chrome.storage.local.get(["videoData"]).then((result) => {
+            console.log("Storage result for videoData:", result);
+            if (result.videoData && result.videoData.hasVideo) {
+              console.log(
+                "Found video metadata in storage, size:",
+                result.videoData.size
+              );
+
+              // Show that video was recorded but may not be available
+              const sizeInMB = (result.videoData.size / (1024 * 1024)).toFixed(
+                2
+              );
+              document.getElementById(
+                "videoDuration"
+              ).textContent = `${sizeInMB} MB video (not available)`;
+
+              const downloadBtn = document.getElementById("downloadVideo");
+              downloadBtn.disabled = true;
+              downloadBtn.textContent = "⚠️ Lost";
+              downloadBtn.style.opacity = "0.5";
+              downloadBtn.style.cursor = "not-allowed";
+            } else {
+              // No video data available
+              console.log("No video metadata found in storage");
+              document.getElementById("videoDuration").textContent =
+                "No video recorded";
+              const downloadBtn = document.getElementById("downloadVideo");
+              downloadBtn.disabled = true;
+              downloadBtn.textContent = "⬇️ Download";
+              downloadBtn.style.opacity = "0.5";
+              downloadBtn.style.cursor = "not-allowed";
+            }
+          });
         }
-      });
+      })();
     }
 
     // Handle network evidence
@@ -907,6 +926,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Handle console evidence
+    console.log("Checking console evidence - consoleData length:", consoleData.length);
+    console.log("Console data:", consoleData);
+    
     if (consoleData.length > 0) {
       const errorCount = consoleData.filter(
         (log) => log.level === "error"
@@ -914,17 +936,22 @@ document.addEventListener("DOMContentLoaded", () => {
       const warningCount = consoleData.filter(
         (log) => log.level === "warning"
       ).length;
+      
+      console.log("Error count:", errorCount, "Warning count:", warningCount);
+      
       document.getElementById(
         "consoleSummary"
       ).textContent = `${errorCount} errors, ${warningCount} warnings`;
 
       // Enable download button
       const downloadBtn = document.getElementById("downloadLogs");
+      console.log("Enabling console download button");
       downloadBtn.disabled = false;
       downloadBtn.textContent = "⬇️ Download";
       downloadBtn.style.opacity = "1";
       downloadBtn.style.cursor = "pointer";
     } else {
+      console.log("No console data found, disabling download button");
       // No console data
       document.getElementById("consoleSummary").textContent =
         "No console data captured";
@@ -936,7 +963,7 @@ document.addEventListener("DOMContentLoaded", () => {
       downloadBtn.style.opacity = "0.5";
       downloadBtn.style.cursor = "not-allowed";
     }
-  }
+  } // End of displayEvidencePanel function
 
   function updateStatusIndicator(type, text) {
     statusText.textContent = text;
@@ -1071,49 +1098,26 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  function downloadVideo() {
-    console.log("Download video clicked, videoBlob exists:", !!videoBlob);
+  async function downloadVideo() {
+    console.log("Download video clicked - delegating to content script");
 
-    if (videoBlob) {
-      const success = triggerDownload(
-        videoBlob,
-        `screen-recording-${Date.now()}.webm`,
-        "video/webm"
+    try {
+      console.log(
+        "Attempting to download video from content script, tab ID:",
+        currentTabId
       );
-      if (!success) {
-        alert("Error downloading video. Please try again.");
-      }
-    } else {
-      console.log("No video blob, trying to restore from storage");
-      // Try to restore video from storage first
-      chrome.storage.local.get(["videoData"]).then((result) => {
-        if (result.videoData && result.videoData.data) {
-          try {
-            const uint8Array = new Uint8Array(result.videoData.data);
-            videoBlob = new Blob([uint8Array], {
-              type: result.videoData.type || "video/webm",
-            });
-            console.log("Video blob restored for download");
-
-            // Try download again
-            const success = triggerDownload(
-              videoBlob,
-              `screen-recording-${Date.now()}.webm`,
-              "video/webm"
-            );
-            if (!success) {
-              alert("Error downloading video. Please try recording again.");
-            }
-          } catch (error) {
-            console.error("Error restoring/downloading video:", error);
-            alert("Error downloading video. Please try recording again.");
-          }
-        } else {
-          alert(
-            "No video available for download. Please record a video first."
-          );
-        }
+      const response = await chrome.tabs.sendMessage(currentTabId, {
+        action: "downloadVideo",
       });
+
+      if (response && response.success) {
+        console.log("Video download initiated from content script");
+      } else {
+        throw new Error("Content script download failed");
+      }
+    } catch (error) {
+      console.error("Error downloading video via content script:", error);
+      alert("Error downloading video. Please try recording again.");
     }
   }
 

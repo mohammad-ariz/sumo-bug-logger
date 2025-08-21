@@ -1,5 +1,8 @@
 console.log("Sumo Bug Logger background service worker loaded");
 
+// Global video blob storage for persistence across popup sessions
+let storedVideoBlob = null;
+
 // Hot Reload for Development
 if (!chrome.runtime.getManifest().update_url) {
   // We're in development mode, enable hot reload
@@ -138,6 +141,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     case "stopVideoRecording":
       handleStopVideoRecording(request, sendResponse);
+      break;
+
+    case "storeVideoBlob":
+      handleStoreVideoBlob(request, sendResponse);
+      break;
+
+    case "getVideoBlob":
+      handleGetVideoBlob(request, sendResponse);
       break;
 
     case "getRecordingStats":
@@ -800,6 +811,37 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 // Extension lifecycle
+// Video blob storage handlers
+function handleStoreVideoBlob(request, sendResponse) {
+  try {
+    console.log(
+      "Storing video blob in background script, size:",
+      request.videoData.size
+    );
+    storedVideoBlob = request.videoData;
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error("Error storing video blob:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+function handleGetVideoBlob(request, sendResponse) {
+  try {
+    if (storedVideoBlob) {
+      console.log("Retrieving stored video blob, size:", storedVideoBlob.size);
+      sendResponse({ success: true, videoData: storedVideoBlob });
+    } else {
+      console.log("No stored video blob found");
+      sendResponse({ success: true, videoData: null });
+    }
+  } catch (error) {
+    console.error("Error retrieving video blob:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+// Cleanup on extension suspend
 chrome.runtime.onSuspend.addListener(() => {
   console.log("Extension suspending, cleaning up...");
   // Clean up any active debugger sessions

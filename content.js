@@ -671,4 +671,192 @@ if (window.sumoDebuggerLoaded) {
 
   // Clean up on page unload
   window.addEventListener("beforeunload", cleanupSelection);
+
+  // Video recording variables for persistence
+  let mediaRecorder = null;
+  let videoStream = null;
+  let recordedChunks = [];
+
+  // Video recording functions
+  async function startVideoRecording() {
+    try {
+      console.log("Starting video recording in content script");
+
+      // Get screen capture stream
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { mediaSource: "screen" },
+        audio: true,
+      });
+
+      videoStream = stream;
+      recordedChunks = [];
+
+      // Create MediaRecorder
+      mediaRecorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordedChunks.push(event.data);
+          console.log("Video chunk received, size:", event.data.size);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        console.log(
+          "MediaRecorder stopped, total chunks:",
+          recordedChunks.length
+        );
+
+        if (recordedChunks.length > 0) {
+          const videoBlob = new Blob(recordedChunks, { type: "video/webm" });
+          console.log("Video blob created, size:", videoBlob.size);
+
+          // Stop all tracks
+          if (videoStream) {
+            videoStream.getTracks().forEach((track) => track.stop());
+          }
+
+          // Store video blob in content script memory (persists when popup closes)
+          window.currentVideoBlob = videoBlob;
+
+          // Save metadata to Chrome storage
+          try {
+            await chrome.storage.local.set({
+              videoData: {
+                hasVideo: true,
+                size: videoBlob.size,
+                type: videoBlob.type,
+                timestamp: Date.now(),
+              },
+            });
+            console.log(
+              "Video metadata saved to storage, actual video size:",
+              videoBlob.size
+            );
+          } catch (error) {
+            console.error("Error saving video metadata:", error);
+          }
+        }
+
+        // Clean up
+        mediaRecorder = null;
+        videoStream = null;
+        recordedChunks = [];
+      };
+
+      // Start recording
+      mediaRecorder.start();
+      console.log("MediaRecorder started in content script");
+
+      return true;
+    } catch (error) {
+      console.error("Error starting video recording:", error);
+      throw error;
+    }
+  }
+
+  async function stopVideoRecording() {
+    try {
+      console.log("Stopping video recording in content script");
+
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+        console.log("MediaRecorder stop() called");
+      } else {
+        console.log("MediaRecorder not active or not available");
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Error stopping video recording:", error);
+      throw error;
+    }
+  }
+
+  // Add video recording message handlers
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    console.log("Content script received message:", request);
+
+    if (request.action === "startRegionSelection") {
+      try {
+        startRegionSelection();
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error("Error starting region selection:", error);
+        sendResponse({ success: false, error: error.message });
+      }
+      return true;
+    }
+
+    if (request.action === "startVideoRecording") {
+      startVideoRecording()
+        .then(() => {
+          sendResponse({ success: true });
+        })
+        .catch((error) => {
+          console.error("Error starting video recording:", error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true; // Keep the message channel open for async response
+    }
+
+    if (request.action === "stopVideoRecording") {
+      stopVideoRecording()
+        .then(() => {
+          sendResponse({ success: true });
+        })
+        .catch((error) => {
+          console.error("Error stopping video recording:", error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true; // Keep the message channel open for async response
+    }
+
+    if (request.action === "getVideoBlob") {
+      console.log("Handling getVideoBlob request");
+      console.log("Current video blob exists?", !!window.currentVideoBlob);
+
+      // Return the video blob if available
+      if (window.currentVideoBlob) {
+        console.log("Video blob size:", window.currentVideoBlob.size);
+        console.log("Video blob type:", window.currentVideoBlob.type);
+        sendResponse({
+          success: true,
+          hasVideo: true,
+          size: window.currentVideoBlob.size,
+          type: window.currentVideoBlob.type,
+        });
+      } else {
+        console.log("No video blob found");
+        sendResponse({ success: true, hasVideo: false });
+      }
+      return true;
+    }
+
+    if (request.action === "downloadVideo") {
+      // Handle video download from content script
+      if (window.currentVideoBlob) {
+        try {
+          const url = URL.createObjectURL(window.currentVideoBlob);
+          const a = document.createElement("a");
+          a.style.display = "none";
+          a.href = url;
+          a.download = `bug-video-${Date.now()}.webm`;
+          document.body.appendChild(a);
+          a.click();
+          URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error("Error downloading video:", error);
+          sendResponse({ success: false, error: error.message });
+        }
+      } else {
+        sendResponse({ success: false, error: "No video available" });
+      }
+      return true;
+    }
+
+    return true;
+  });
 } // End of sumoDebuggerLoaded check
