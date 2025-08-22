@@ -15,23 +15,31 @@
         width: 350px;
         min-height: 600px;
         font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-        background: #f8f9fa;
         color: #333;
-        border-radius: 12px;
+        overflow: hidden; /* This is crucial for rounded corners */
+      }
+
+      /* Add this to ensure the popup container itself has rounded corners */
+      html {
+        overflow: hidden;
       }
 
       .header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
+        background-color: #233654;
         padding: 16px;
         text-align: center;
         position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
       .header h1 {
         font-size: 18px;
         font-weight: 600;
         margin-bottom: 4px;
+        margin-left: 12px;
       }
 
       .status-indicator {
@@ -78,6 +86,7 @@
 
       .container {
         padding: 20px;
+       background-color: white;
       }
 
       .step-section {
@@ -99,10 +108,14 @@
 
       .step-content {
         padding: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
       }
 
       .button {
-        width: 100%;
+        width: 80%;
         padding: 12px 16px;
         border: none;
         border-radius: 6px;
@@ -112,6 +125,9 @@
         transition: all 0.2s ease;
         text-align: center;
         margin-bottom: 8px;
+      }
+      .button.btn-width {
+        width: 100%;
       }
 
       .primary-btn {
@@ -181,6 +197,7 @@
         padding: 12px;
         margin-top: 12px;
         font-size: 12px;
+        width: 80%;
       }
 
       .indicator-item {
@@ -199,6 +216,7 @@
         border-radius: 6px;
         padding: 12px;
         margin-bottom: 16px;
+        width: 100%;
       }
 
       .team-info-header {
@@ -206,6 +224,11 @@
         font-size: 13px;
         color: #1565c0;
         margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+      }
+      .team-info-header img {
+        margin-right: 8px;
       }
 
       .team-info-item {
@@ -224,6 +247,7 @@
         border-radius: 6px;
         padding: 12px;
         margin-bottom: 16px;
+        width: 100%;
       }
 
       .evidence-header {
@@ -262,6 +286,7 @@
 
       .form-group {
         margin-bottom: 16px;
+        width: 100%;
       }
 
       .form-label {
@@ -437,25 +462,21 @@
   <body>
     <!-- Header -->
     <div class="header">
-      <h1>🐛 Sumo Bug Logger</h1>
-      <div class="status-indicator">
-        <div class="status-dot" id="statusDot"></div>
-        <span id="statusText">Ready</span>
-      </div>
-      <div class="progress-indicator" id="progressIndicator">Step 1 of 3</div>
+     <img src="./icons/sumoLogic.jpg" width="48" height="48" />
+      <h1>Sumo bug logger</h1>
     </div>
 
     <!-- Main Container -->
     <div class="container">
       <!-- Step 1: Bug Area Selection -->
       <div class="step-section" id="step1">
-        <div class="step-header">🎯 Select Buggy Component</div>
+        <div class="step-header">🎯 Select Buggy Module</div>
         <div class="step-content">
           <button id="selectRegionBtn" class="button primary-btn">
-            Select Buggy Component
+                Select Module
           </button>
           <div class="status-text" id="step1Status">
-            Click to start selecting the buggy component
+            Click to start selecting the buggy module
           </div>
         </div>
       </div>
@@ -495,7 +516,10 @@
         <div class="step-content">
           <!-- Team Information Panel -->
           <div class="team-info-panel hidden" id="teamInfoPanel">
-            <div class="team-info-header">� Team Information</div>
+            <div class="team-info-header">
+                <img src="./icons/group.png" width="24" height="24" />
+                Team Information
+            </div>
             <div class="team-info-item">
               <span>Team:</span>
               <span id="teamName">-</span>
@@ -510,7 +534,7 @@
             </div>
             <div class="team-info-item">
               <span>Slack Channel:</span>
-              <span id="slackChannel">-</span>
+              <a id="slackChannel">-</a>
             </div>
           </div>
 
@@ -630,7 +654,7 @@
 
     <!-- Action Buttons -->
     <div class="action-buttons">
-      <button id="reportBugBtn" class="button primary-btn" disabled>
+      <button id="reportBugBtn" class="button primary-btn btn-width" disabled>
         🚀 Report Bug
       </button>
       <div class="secondary-actions">
@@ -644,11 +668,6 @@
     <div class="footer">
       <div id="dataStatus">Ready to start</div>
       <div id="storageUsage">Using 0 MB storage</div>
-    </div>
-
-    <!-- Info Content (shown when no data) -->
-    <div id="infoContent" class="info-content hidden">
-      Select a buggy region to start
     </div>
 
     <!-- Confirmation Modal -->
