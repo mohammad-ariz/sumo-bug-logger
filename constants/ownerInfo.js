@@ -4,8 +4,8 @@ const OWNER_INFO = {
     teamJiraLabel: "UI Observability Issue",
     managerName: "Ayan Ghatak",
     managerId: "ayan.ghatak@sumologic.com",
-    slackChannel: "#ui-observability-bugs",
-    slackChannelId: "C1234567890",
+    slackChannel: "#obs-ui-ops",
+    slackChannelId: "https://sumologic.enterprise.slack.com/archives/C08MQ8GENEN",
   },
   "@Frontend/core": {
     teamName: "Frontend Core",

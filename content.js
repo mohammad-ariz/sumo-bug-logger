@@ -70,7 +70,7 @@ function startComponentSelection() {
 
   // Show toast notification
   showToast(
-    "Hover over elements to find components and click to select",
+    "Hover over component to find module and click to select",
     "info"
   );
 
@@ -270,7 +270,7 @@ function showTooltip(event, componentName, componentElement) {
         font-size: 11px;
         cursor: pointer;
         font-family: inherit;
-      ">Select Component</button>
+      ">Select Module</button>
     </div>
   `;
 
@@ -460,7 +460,7 @@ async function captureComponentScreenshot(element, componentName, teamOwner) {
     const teamInfo = {
       teamName: teamOwner.replace("@", "").split("/")[1] || "Unknown Team",
       teamJiraLabel: "Component Bug",
-      managerName: "Team Lead",
+      managerName: "Ayan Ghatak",
       managerId: `${teamOwner.replace("@", "").toLowerCase()}@company.com`,
       slackChannel: teamOwner,
       slackChannelId: "C0000000000",
@@ -501,9 +501,9 @@ async function captureComponentScreenshot(element, componentName, teamOwner) {
         showToast("Error saving component data. Please try again.", "error");
         return;
       } else {
-        console.log("✅ Component data saved to storage");
+        console.log("✅ Module data saved to storage");
         showToast(
-          `Component "${componentName}" selected successfully!`,
+          `Module "${componentName}" selected successfully!`,
           "success"
         );
       }
@@ -846,5 +846,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if(request.action === "getRecordingBlob") {
+    if (window.currentVideoBlob) {
+    window.currentVideoBlob.arrayBuffer()
+    .then(arrayBuffer=>{
+        sendResponse({ success: true, videoData: Array.from(new Uint8Array(arrayBuffer)) });
+    })
+    } else {
+      sendResponse({ success: false, videoData: new Array() });
+    }
+    return true;
+  }
   return true;
 });

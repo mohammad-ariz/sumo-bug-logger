@@ -86,15 +86,15 @@ async function createJiraIssue({ assigneeId , componentId , description, project
 async function attachFilesToJira(issueKey, harBlob, consoleBlob , videoBlob) {
   const formData = new FormData();
   formData.append("file", harBlob, "network.har");
-//   formData.append("file", consoleBlob, "console.log.txt");
-//   formData.append("file", videoBlob, "video.mp4");
+  formData.append("file", consoleBlob, "console.log.txt");
+  formData.append("file", videoBlob, "video.webm");
 
 const jiraDomain = window.ENV.jiraDomain;
 const email = window.ENV.email;
 const apiToken = window.ENV.apiToken;
 const url = `https://${jiraDomain}/rest/api/3/issue/${issueKey}/attachments`;
 
-  fetch(url, {
+  return fetch(url, {
      method: 'POST',
      body: formData,
      headers: {
@@ -146,5 +146,32 @@ async function getCurrentUser() {
   }
 }
 
+
+const reportIssueInSlack = async (issueLink) => {
+  // Placeholder function for Slack integration
+  const slackWebHookUrl = 'https://hooks.slack.com/services/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'
+  const body = JSON.stringify({
+	attachments: [
+		{
+			pretext: ":warning: Attention <!subteam^SRFV89MGT>: New issue has been reported.",
+			fields: [
+				{
+					title: "Issue link",
+					value: issueLink
+				},
+            ],
+			mrkdwn_in: ["text", "pretext"],
+			color: "#F75A4F"
+		}
+	]
+});
+
+  return fetch(slackWebHookUrl, {
+     method: 'POST',
+     body
+ })
+};
+
+
 // Browser-compatible exports
-window.jiraService = { createJiraIssue, getCurrentUser, attachFilesToJira };
+window.jiraService = { createJiraIssue, getCurrentUser, attachFilesToJira , reportIssueInSlack };
