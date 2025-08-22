@@ -1,3 +1,5 @@
+// Import functions will be available globally since they're loaded via manifest.json
+
 document.addEventListener("DOMContentLoaded", () => {
   console.log("POPUP SCRIPT LOADED - DOM ready");
 
@@ -35,7 +37,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const slackChannel = document.getElementById("slackChannel");
 
   // Evidence elements
-  const screenshotEvidence = document.getElementById("screenshotEvidence");
   const videoEvidence = document.getElementById("videoEvidence");
   const networkEvidence = document.getElementById("networkEvidence");
   const consoleEvidence = document.getElementById("consoleEvidence");
@@ -64,7 +65,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let recordingStartTime = null;
   let timerInterval = null;
   let currentStep = 1;
-  let bugRegionData = null;
+  let bugComponentData = null;
   let networkData = [];
   let consoleData = [];
   let videoBlob = null;
@@ -175,21 +176,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // If no region data found, try again after a short delay
       // This handles timing issues where content script just saved data
-      if (!bugRegionData) {
-        console.log("No region data found on first load, retrying in 100ms...");
-        setTimeout(async () => {
-          const retryResult = await chrome.storage.local.get(["bugRegionData"]);
-          if (retryResult.bugRegionData) {
-            console.log("Found region data on retry!");
-            bugRegionData = retryResult.bugRegionData;
-            if (bugRegionData.teamInfo) {
-              displayTeamInfo(bugRegionData.teamInfo);
-            }
-            currentStep = Math.max(currentStep, 2);
-            updateUI();
-          }
-        }, 100);
-      }
 
       console.log("CALLING updateUI() and updateStorageUsage()");
       updateUI();
@@ -201,10 +187,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Event Listeners
-  selectRegionBtn.addEventListener("click", () => {
-    console.log("Select Region button clicked!");
-    handleRegionSelection();
-  });
+  selectRegionBtn.addEventListener("click", handleComponentSelection);
   recordNetworkBtn.addEventListener("click", handleRecording);
   reportBugBtn.addEventListener("click", handleReportBug);
   clearDataBtn.addEventListener("click", showClearDataModal);
@@ -219,22 +202,20 @@ document.addEventListener("DOMContentLoaded", () => {
   modalConfirm.addEventListener("click", handleClearData);
 
   // Evidence thumbnail listeners
-  downloadScreenshot.addEventListener("click", downloadScreenshotFile);
+
   document
     .getElementById("downloadVideo")
     .addEventListener("click", downloadVideo);
   downloadHar.addEventListener("click", downloadHarFile);
   downloadLogs.addEventListener("click", downloadLogsFile);
 
-  // Region Selection Handler
-  async function handleRegionSelection() {
-    console.log("handleRegionSelection called!");
-    console.log("currentTabId:", currentTabId);
-
+  // Component Selection Handler
+  async function handleComponentSelection() {
     try {
-      updateStatusIndicator("processing", "Selecting Region");
-      step1Status.textContent = "Draw a rectangle around the bug on the page";
-      selectRegionBtn.textContent = "Selection Mode Active...";
+      updateStatusIndicator("processing", "Selecting Component");
+      step1Status.textContent =
+        "Hover over components with data-component attributes and click to select";
+      selectRegionBtn.textContent = "Component Selection Active...";
       selectRegionBtn.className = "button warning-btn";
       selectRegionBtn.disabled = true;
 
@@ -247,23 +228,23 @@ document.addEventListener("DOMContentLoaded", () => {
       // Wait for injection to complete
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Start region selection
+      // Start component selection
       const response = await chrome.tabs.sendMessage(currentTabId, {
-        action: "startRegionSelection",
+        action: "startComponentSelection",
       });
 
       if (response && response.success) {
         // Close popup to allow user interaction
         setTimeout(() => window.close(), 1000);
       } else {
-        throw new Error("Failed to start region selection");
+        throw new Error("Failed to start component selection");
       }
     } catch (error) {
-      console.error("Error starting region selection:", error);
+      console.error("Error starting component selection:", error);
       updateStatusIndicator("error", "Selection Failed");
       step1Status.textContent =
         "Error: Could not start selection. Please refresh and try again.";
-      selectRegionBtn.textContent = "Select Bug Area";
+      selectRegionBtn.textContent = "Select Buggy Component";
       selectRegionBtn.className = "button primary-btn";
       selectRegionBtn.disabled = false;
     }
@@ -558,7 +539,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Collect all data
       const bugReport = {
-        bugRegionData: bugRegionData,
+        bugComponentData: bugComponentData,
         networkData: networkData,
         consoleData: consoleData,
         videoBlob: videoBlob,
@@ -582,6 +563,36 @@ document.addEventListener("DOMContentLoaded", () => {
       // Future: Send to Jira and Slack
       // await createJiraTicket(bugReport);
       // await notifySlackChannel(bugReport);
+
+      window.jiraService
+        .getCurrentUser()
+        .then((res) => {
+          const reporterId = res.accountId;
+          const assigneeId = reporterId;
+          const projectId = "10057"; // sumo project ID
+          const priority = "2"; // Medium priority
+          const componentName = "Query editor";
+          const parentKey = "SUMO-268781"; // hack sumo issue epic
+          const componentId = "10702"; // logs/metric UI
+          return window.jiraService.createJiraIssue({
+            assigneeId: assigneeId,
+            componentId: componentId,
+            description: bugReport.description,
+            projectId: projectId,
+            reporterId: reporterId,
+            summary:
+              componentName + " - " + (bugReport.description || "Bug Report"),
+            priority,
+            parentKey,
+          });
+        })
+        .then((res) => {
+          const harBlob = window.utils.createHarBlob(networkData);
+          return window.jiraService.attachFilesToJira(res.key, harBlob);
+        })
+        .then((res) => {
+          updateStatusIndicator("ready", "Bug Reported " + res);
+        });
     } catch (error) {
       console.error("Error reporting bug:", error);
       updateStatusIndicator("error", "Report Failed");
@@ -609,7 +620,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Reset UI state
       currentStep = 1;
-      bugRegionData = null;
+      bugComponentData = null;
       networkData = [];
       consoleData = [];
       videoBlob = null;
@@ -621,7 +632,7 @@ document.addEventListener("DOMContentLoaded", () => {
       stepsToReproduce.value = "";
 
       // Reset button states
-      selectRegionBtn.textContent = "📍 Select Bug Area";
+      selectRegionBtn.textContent = "🎯 Select Buggy Component";
       selectRegionBtn.className = "button primary-btn";
       selectRegionBtn.disabled = false;
 
@@ -635,8 +646,7 @@ document.addEventListener("DOMContentLoaded", () => {
       infoContent.classList.remove("hidden");
 
       // Reset status messages
-      step1Status.textContent =
-        "Draw a rectangle around the buggy area on the page";
+      step1Status.textContent = "Click to start selecting the buggy component";
       step2Status.textContent = "Record your steps to reproduce the bug";
 
       // Update UI
@@ -653,22 +663,15 @@ document.addEventListener("DOMContentLoaded", () => {
   async function loadExistingData() {
     try {
       const result = await chrome.storage.local.get([
-        "bugRegionData",
+        "bugComponentData",
         "networkData",
         "consoleData",
         "videoData",
         "bugReport",
       ]);
 
-      console.log("Storage result:", {
-        hasBugRegionData: !!result.bugRegionData,
-        hasNetworkData: result.networkData?.length > 0,
-        hasConsoleData: result.consoleData?.length > 0,
-        hasVideoData: !!result.videoData,
-      });
-
-      if (result.bugRegionData) {
-        bugRegionData = result.bugRegionData;
+      if (result.bugComponentData) {
+        bugComponentData = result.bugComponentData;
         currentStep = Math.max(currentStep, 2);
         console.log(
           "Loaded bugRegionData, setting currentStep to:",
@@ -676,8 +679,8 @@ document.addEventListener("DOMContentLoaded", () => {
         );
 
         // Show team info
-        if (bugRegionData.teamInfo) {
-          displayTeamInfo(bugRegionData.teamInfo);
+        if (bugComponentData.teamInfo) {
+          displayTeamInfo(bugComponentData.teamInfo);
         }
       }
 
@@ -750,23 +753,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // UI Update Functions
   function updateUI() {
-    console.log(
-      "UPDATE UI - currentStep:",
-      currentStep,
-      "bugRegionData exists:",
-      !!bugRegionData
-    );
-
     // Update progress indicator
     progressIndicator.textContent = `Step ${currentStep} of 3`;
 
     // Update step 1
-    if (bugRegionData) {
-      console.log("Updating button to green - region selected");
-      selectRegionBtn.textContent = "✅ Area Selected";
+    if (bugComponentData) {
+      selectRegionBtn.textContent = "✅ Component Selected";
       selectRegionBtn.className = "button success-btn";
       selectRegionBtn.disabled = true;
-      step1Status.textContent = "Bug area captured successfully";
+      step1Status.textContent = "Bug component captured successfully";
 
       // Enable step 2
       recordNetworkBtn.disabled = false;
@@ -777,7 +772,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (currentStep >= 2) {
       // If we're on step 2 or higher, enable recording button
       recordNetworkBtn.disabled = false;
-      if (!bugRegionData) {
+      if (!bugComponentData) {
         step2Status.textContent =
           "Recording started from toast - capture evidence";
       }
@@ -795,7 +790,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Show/hide info content
-    if (currentStep === 1 && !bugRegionData) {
+    if (currentStep === 1 && !bugComponentData) {
       infoContent.classList.remove("hidden");
     } else {
       infoContent.classList.add("hidden");
@@ -813,37 +808,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function displayEvidencePanel() {
     evidencePanel.classList.remove("hidden");
 
-    // Always show all evidence sections
-    screenshotEvidence.classList.remove("hidden");
     videoEvidence.classList.remove("hidden");
     networkEvidence.classList.remove("hidden");
     consoleEvidence.classList.remove("hidden");
-
-    // Handle screenshot evidence
-    if (bugRegionData && bugRegionData.screenshot) {
-      // Calculate and show screenshot info
-      const dataURL = bugRegionData.screenshot;
-      const sizeInKB = Math.round((dataURL.length * 0.75) / 1024); // Approximate size from base64
-      document.getElementById(
-        "screenshotInfo"
-      ).textContent = `${sizeInKB} KB screenshot captured`;
-
-      // Enable download button
-      const downloadBtn = document.getElementById("downloadScreenshot");
-      downloadBtn.disabled = false;
-      downloadBtn.textContent = "⬇️ Download";
-      downloadBtn.style.opacity = "1";
-      downloadBtn.style.cursor = "pointer";
-    } else {
-      // No screenshot available
-      document.getElementById("screenshotInfo").textContent =
-        "No screenshot captured";
-      const downloadBtn = document.getElementById("downloadScreenshot");
-      downloadBtn.disabled = true;
-      downloadBtn.textContent = "⬇️ Download";
-      downloadBtn.style.opacity = "0.5";
-      downloadBtn.style.cursor = "not-allowed";
-    }
 
     // Handle video evidence
     console.log(
@@ -1029,7 +996,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const isValid =
       bugDescription.value.trim().length > 0 &&
       severityLevel.value !== "" &&
-      (bugRegionData || networkData.length > 0);
+      (bugComponentData || networkData.length > 0);
 
     reportBugBtn.disabled = !isValid;
     return isValid;
@@ -1122,31 +1089,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Debug function to check data state
-  function debugDataState() {
-    console.log("=== DEBUG DATA STATE ===");
-    console.log("Video blob exists:", !!videoBlob);
-    console.log("Network data length:", networkData.length);
-    console.log("Console data length:", consoleData.length);
-    console.log("Bug region data exists:", !!bugRegionData);
-    console.log("Current step:", currentStep);
-    console.log("Is recording:", isRecording);
-
-    if (networkData.length > 0) {
-      console.log("Network data sample:", networkData.slice(0, 3));
-    }
-
-    if (consoleData.length > 0) {
-      console.log("Console data sample:", consoleData.slice(0, 3));
-    }
-
-    // Check storage
-    chrome.storage.local.get(null).then((data) => {
-      console.log("Storage contents:", Object.keys(data));
-      if (data.videoData) {
-        console.log("Video data in storage size:", data.videoData.data?.length);
-      }
-    });
-  }
 
   async function downloadVideo() {
     console.log("Download video clicked - delegating to content script");
@@ -1168,49 +1110,6 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (error) {
       console.error("Error downloading video via content script:", error);
       alert("Error downloading video. Please try recording again.");
-    }
-  }
-
-  function downloadScreenshotFile() {
-    console.log(
-      "Download screenshot clicked, bugRegionData exists:",
-      !!bugRegionData
-    );
-
-    if (bugRegionData && bugRegionData.screenshot) {
-      try {
-        // Convert data URL to blob
-        const dataURL = bugRegionData.screenshot;
-        const [header, data] = dataURL.split(",");
-        const mimeMatch = header.match(/data:([^;]+)/);
-        const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
-
-        const byteCharacters = atob(data);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: mimeType });
-
-        const fileExtension = mimeType.includes("png") ? "png" : "jpg";
-        const success = triggerDownload(
-          blob,
-          `screenshot-${Date.now()}.${fileExtension}`,
-          mimeType
-        );
-
-        if (!success) {
-          alert("Error downloading screenshot. Please try again.");
-        }
-      } catch (error) {
-        console.error("Error downloading screenshot:", error);
-        alert("Error downloading screenshot. Please try again.");
-      }
-    } else {
-      alert(
-        "No screenshot available for download. Please capture a screenshot first."
-      );
     }
   }
 
@@ -1466,16 +1365,10 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log("STORAGE CHANGE EVENT:", { changes, namespace });
 
     if (namespace === "local") {
-      console.log("Local storage change detected, keys:", Object.keys(changes));
-
-      if (changes.bugRegionData) {
-        console.log(
-          "STORAGE CHANGE - bugRegionData received:",
-          changes.bugRegionData.newValue
-        );
-        bugRegionData = changes.bugRegionData.newValue;
-        if (bugRegionData && bugRegionData.teamInfo) {
-          displayTeamInfo(bugRegionData.teamInfo);
+      if (changes.bugComponentData) {
+        bugComponentData = changes.bugComponentData.newValue;
+        if (bugComponentData && bugComponentData.teamInfo) {
+          displayTeamInfo(bugComponentData.teamInfo);
         }
         console.log(
           "STORAGE CHANGE - setting currentStep to:",
@@ -1515,58 +1408,5 @@ document.addEventListener("DOMContentLoaded", () => {
   window.testConsole = function () {
     console.log("CONSOLE TEST - this should appear");
     alert("Console test - popup script is working");
-  };
-
-  // Test storage directly
-  window.testStorage = function () {
-    console.log("=== MANUAL STORAGE CHECK ===");
-    chrome.storage.local.get(["bugRegionData"], (result) => {
-      console.log("Storage result:", result);
-      if (result.bugRegionData) {
-        console.log("Found bugRegionData:", result.bugRegionData);
-        console.log("Current bugRegionData variable:", bugRegionData);
-        console.log("Current currentStep:", currentStep);
-
-        // Update variables
-        bugRegionData = result.bugRegionData;
-        currentStep = Math.max(currentStep, 2);
-
-        console.log("Updated currentStep to:", currentStep);
-        console.log("Calling updateUI()...");
-        updateUI();
-
-        if (result.bugRegionData.teamInfo) {
-          displayTeamInfo(result.bugRegionData.teamInfo);
-        }
-      } else {
-        console.log("No bugRegionData found in storage");
-      }
-    });
-  };
-
-  // Auto-check storage periodically for debugging
-  window.startStoragePolling = function () {
-    console.log("Starting storage polling every 2 seconds...");
-    const pollInterval = setInterval(() => {
-      chrome.storage.local.get(["bugRegionData"], (result) => {
-        if (result.bugRegionData && !bugRegionData) {
-          console.log("POLLING: Found new bugRegionData, updating UI...");
-          bugRegionData = result.bugRegionData;
-          currentStep = Math.max(currentStep, 2);
-          updateUI();
-          if (result.bugRegionData.teamInfo) {
-            displayTeamInfo(result.bugRegionData.teamInfo);
-          }
-          clearInterval(pollInterval);
-          console.log("Storage polling stopped - data found and UI updated");
-        }
-      });
-    }, 2000);
-
-    // Stop polling after 30 seconds
-    setTimeout(() => {
-      clearInterval(pollInterval);
-      console.log("Storage polling stopped - timeout reached");
-    }, 30000);
   };
 });

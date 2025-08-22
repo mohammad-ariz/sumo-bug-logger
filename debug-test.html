@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Component Selection Debug Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 20px;
+        }
+        .component {
+            margin: 20px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        .component h2 {
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Component Selection Debug Test</h1>
+    
+    <div class="component" data-bug-logger-id="queryEditor">
+        <h2>Query Editor Component</h2>
+        <p>This is a test component with data-bug-logger-id="queryEditor"</p>
+        <textarea placeholder="Enter your query here..."></textarea>
+        <button>Run Query</button>
+    </div>
+    
+    <div class="component" data-bug-logger-id="messageTable">
+        <h2>Message Table Component</h2>
+        <p>This is a test component with data-bug-logger-id="messageTable"</p>
+        <table>
+            <thead>
+                <tr><th>Time</th><th>Message</th><th>Level</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>12:00</td><td>Test message 1</td><td>INFO</td></tr>
+                <tr><td>12:01</td><td>Test message 2</td><td>ERROR</td></tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="component" data-bug-logger-id="filterPanel">
+        <h2>Filter Panel Component</h2>
+        <p>This is a test component with data-bug-logger-id="filterPanel"</p>
+        <div>
+            <label><input type="checkbox"> Filter 1</label>
+        </div>
+        <div>
+            <label><input type="checkbox"> Filter 2</label>
+        </div>
+        <div>
+            <label><input type="checkbox"> Filter 3</label>
+        </div>
+    </div>
+    
+    <div class="component" data-bug-logger-id="unknownComponent">
+        <h2>Unknown Component</h2>
+        <p>This component has data-bug-logger-id="unknownComponent" which is not in the mapping</p>
+    </div>
+
+    <script>
+        // Add some console logging to help with debugging
+        console.log("Debug test page loaded");
+        
+        // Monitor for extension messages
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+            console.log("Chrome extension context available");
+        } else {
+            console.log("No Chrome extension context - running as regular webpage");
+        }
+    </script>
+</body>
+</html>

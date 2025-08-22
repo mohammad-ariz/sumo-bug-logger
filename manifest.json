@@ -16,19 +16,27 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.sumologic.net/*", "http://localhost:8443/*"],
+      "matches": [
+        "*://*.sumologic.net/*", 
+    "http://localhost:8443/*",
+    "https://*.atlassian.net/*"],
       "js": ["content.js"],
       "run_at": "document_end"
     }
   ],
-  "host_permissions": ["*://*.sumologic.net/*", "http://localhost:8443/*"],
+  "host_permissions": [
+    "*://*.sumologic.net/*", 
+    "http://localhost:8443/*",
+    "https://*.atlassian.net/*"
+  ],
   "permissions": [
     "activeTab",
     "storage",
     "scripting",
     "debugger",
     "tabs",
-    "desktopCapture"
+    "desktopCapture",
+    "notifications"
   ],
   "web_accessible_resources": [
     {

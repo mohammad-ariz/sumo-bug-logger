@@ -17,6 +17,7 @@
         font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
         background: #f8f9fa;
         color: #333;
+        border-radius: 12px;
       }
 
       .header {
@@ -448,13 +449,13 @@
     <div class="container">
       <!-- Step 1: Bug Area Selection -->
       <div class="step-section" id="step1">
-        <div class="step-header">📍 Select Bug Area</div>
+        <div class="step-header">🎯 Select Buggy Component</div>
         <div class="step-content">
           <button id="selectRegionBtn" class="button primary-btn">
-            Select Bug Area
+            Select Buggy Component
           </button>
           <div class="status-text" id="step1Status">
-            Click to start selecting the buggy region
+            Click to start selecting the buggy component
           </div>
         </div>
       </div>
@@ -516,26 +517,6 @@
           <!-- Evidence Summary Panel -->
           <div class="evidence-panel hidden" id="evidencePanel">
             <div class="evidence-header">📎 Collected Evidence</div>
-
-            <div class="evidence-item" id="screenshotEvidence">
-              <div>
-                <div>📸 Screenshot</div>
-                <div
-                  style="font-size: 10px; color: #6c757d"
-                  id="screenshotInfo"
-                >
-                  No screenshot captured
-                </div>
-              </div>
-              <button
-                class="evidence-thumbnail"
-                id="downloadScreenshot"
-                disabled
-                style="opacity: 0.5; cursor: not-allowed"
-              >
-                ⬇️ Download
-              </button>
-            </div>
 
             <div class="evidence-item" id="videoEvidence">
               <div>
@@ -688,6 +669,9 @@
       </div>
     </div>
 
+    <script src="config.dev.js"></script>
+    <script src="jiraService.js"></script>
+    <script src="utils.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
