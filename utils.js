@@ -149,7 +149,24 @@ const createHarBlob = (data) => {
 }
 
 
+
+const createConsoleBlob = (consoleData)=>{
+          const logsText = consoleData
+        .map(
+          (log) =>
+            `[${new Date(
+              log.timestamp
+            ).toISOString()}] ${log.level.toUpperCase()}: ${log.message}`
+        )
+        .join("\\n");
+
+      const blob = new Blob([logsText], { type: "text/plain" });
+      return blob;
+}
+
+
 // Browser-compatible exports
 window.utils = {
-    createHarBlob
+    createHarBlob,
+    createConsoleBlob
 };

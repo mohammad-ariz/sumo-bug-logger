@@ -552,11 +552,6 @@ document.addEventListener("DOMContentLoaded", () => {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       };
 
-      // For now, just show success (Jira integration will be added later)
-      updateStatusIndicator("ready", "Report Ready");
-      reportBugBtn.textContent = "✅ Bug Reported Successfully";
-      reportBugBtn.className = "button success-btn";
-
       // Save the complete report
       await chrome.storage.local.set({ bugReport: bugReport });
 
@@ -586,12 +581,27 @@ document.addEventListener("DOMContentLoaded", () => {
             parentKey,
           });
         })
-        .then((res) => {
+        .then(async (res) => {
           const harBlob = window.utils.createHarBlob(networkData);
-          return window.jiraService.attachFilesToJira(res.key, harBlob);
+          const consoleBlob = window.utils.createConsoleBlob(consoleData);
+          const recordingRes = await chrome.tabs.sendMessage(currentTabId, {
+            action: "getRecordingBlob",
+          });
+          const uint8Array = new Uint8Array(recordingRes.videoData);
+
+          videoBlob = new Blob([uint8Array], {
+            type: 'video/webm'
+          });
+          return window.jiraService.attachFilesToJira(res.key, harBlob, consoleBlob, videoBlob);
         })
-        .then((res) => {
-          updateStatusIndicator("ready", "Bug Reported " + res);
+        .then(jiraLink=>{
+          return window.jiraService.reportIssueInSlack(jiraLink).then(()=>jiraLink);
+        })
+        .then((jiraLink) => {
+               // For now, just show success (Jira integration will be added later)
+              updateStatusIndicator("ready", "Report Ready");
+              reportBugBtn.textContent = "✅ Bug Reported Successfully";
+              reportBugBtn.className = "button success-btn";
         });
     } catch (error) {
       console.error("Error reporting bug:", error);
