@@ -143,6 +143,13 @@
         color: white;
       }
 
+      .success-btn:disabled {
+        background: #28a745;
+        color: rgba(255, 255, 255, 0.9);
+        cursor: not-allowed;
+        opacity: 0.75;
+      }
+
       .danger-btn {
         background: #dc3545;
         color: white;
@@ -464,7 +471,7 @@
       <div class="step-section" id="step2">
         <div class="step-header">🎬 Record Reproducible Steps</div>
         <div class="step-content">
-          <button id="recordNetworkBtn" class="button secondary-btn" disabled>
+          <button id="recordNetworkBtn" class="button primary-btn" disabled>
             🔴 Start Recording
           </button>
           <div class="status-text" id="step2Status">Complete step 1 first</div>
@@ -578,50 +585,39 @@
 
           <!-- Bug Details Form -->
           <div class="form-group">
-            <label class="form-label" for="bugDescription"
-              >🐛 Bug Description *</label
-            >
+            <label class="form-label" for="bugDescription">🐛 Title *</label>
             <textarea
               id="bugDescription"
               class="form-control"
-              rows="4"
-              placeholder="Describe what you expected vs what actually happened..."
-              maxlength="1000"
+              rows="1"
+              placeholder="Add brief bug title..."
+              maxlength="500"
             ></textarea>
             <div class="char-counter" id="descriptionCounter">
-              0/1000 characters
+              0/500 characters
             </div>
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="severityLevel"
-              >⚡ Severity Level *</label
-            >
+            <label class="form-label" for="severityLevel">⚡ Priority *</label>
             <select id="severityLevel" class="form-control">
-              <option value="">Select severity...</option>
-              <option value="critical">
-                🔴 Critical (System down, blocking)
-              </option>
-              <option value="high">🟠 High (Major functionality broken)</option>
-              <option value="medium">
-                🟡 Medium (Minor functionality issue)
-              </option>
-              <option value="low">🟢 Low (Cosmetic, enhancement)</option>
+              <option value="critical">🔴 Highest</option>
+              <option value="high">🟠 High</option>
+              <option value="medium" selected>🟡 Medium</option>
+              <option value="low">🟢 Low</option>
             </select>
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="stepsToReproduce"
-              >📝 Steps to Reproduce</label
-            >
+            <label class="form-label" for="stepsToReproduce">📝 Summary</label>
             <textarea
               id="stepsToReproduce"
               class="form-control"
               rows="3"
-              placeholder="1. Navigate to...&#10;2. Click on...&#10;3. Observe..."
+              placeholder="Add a detailed summary of the issue... like steps to reproduce"
             ></textarea>
             <div class="note-text">
-              Video recording will be attached automatically
+              All files will be attached automatically to JIRA
             </div>
           </div>
         </div>
@@ -640,12 +636,6 @@
       </div>
     </div>
 
-    <!-- Footer -->
-    <div class="footer">
-      <div id="dataStatus">Ready to start</div>
-      <div id="storageUsage">Using 0 MB storage</div>
-    </div>
-
     <!-- Info Content (shown when no data) -->
     <div id="infoContent" class="info-content hidden">
       Select a buggy region to start
@@ -662,9 +652,7 @@
         </div>
         <div class="modal-actions">
           <button class="modal-btn cancel" id="modalCancel">Cancel</button>
-          <button class="modal-btn confirm" id="modalConfirm">
-            🗑️ Delete Everything
-          </button>
+          <button class="modal-btn confirm" id="modalConfirm">Clear All</button>
         </div>
       </div>
     </div>
