@@ -3,10 +3,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   console.log("POPUP SCRIPT LOADED - DOM ready");
 
-  // Initialize all UI elements
-  const statusDot = document.getElementById("statusDot");
-  const statusText = document.getElementById("statusText");
-  const progressIndicator = document.getElementById("progressIndicator");
 
   // Step buttons
   const selectRegionBtn = document.getElementById("selectRegionBtn");
@@ -28,7 +24,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // Info panels
   const teamInfoPanel = document.getElementById("teamInfoPanel");
   const evidencePanel = document.getElementById("evidencePanel");
-  const infoContent = document.getElementById("infoContent");
 
   // Team info elements
   const teamName = document.getElementById("teamName");
@@ -90,7 +85,6 @@ document.addEventListener("DOMContentLoaded", () => {
         !tab.url.includes("sumologic.net") &&
         !tab.url.includes("localhost:8443")
       ) {
-        updateStatusIndicator("error", "Invalid Page");
         step1Status.textContent = "Please navigate to a Sumo Logic page first";
         selectRegionBtn.disabled = true;
         return;
@@ -182,7 +176,6 @@ document.addEventListener("DOMContentLoaded", () => {
       updateStorageUsage();
     } catch (error) {
       console.error("Error initializing popup:", error);
-      updateStatusIndicator("error", "Initialization Error");
     }
   }
 
@@ -212,10 +205,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Component Selection Handler
   async function handleComponentSelection() {
     try {
-      updateStatusIndicator("processing", "Selecting Component");
       step1Status.textContent =
-        "Hover over components with data-component attributes and click to select";
-      selectRegionBtn.textContent = "Component Selection Active...";
+        "Hover over module and click to select";
+      selectRegionBtn.textContent = "Module Selection Active...";
       selectRegionBtn.className = "button warning-btn";
       selectRegionBtn.disabled = true;
 
@@ -241,10 +233,9 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (error) {
       console.error("Error starting component selection:", error);
-      updateStatusIndicator("error", "Selection Failed");
       step1Status.textContent =
         "Error: Could not start selection. Please refresh and try again.";
-      selectRegionBtn.textContent = "Select Buggy Component";
+      selectRegionBtn.textContent = "Select Module";
       selectRegionBtn.className = "button primary-btn";
       selectRegionBtn.disabled = false;
     }
@@ -260,13 +251,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (error) {
       console.error("Error handling recording:", error);
-      updateStatusIndicator("error", "Recording Error");
       stopRecordingUI();
     }
   }
 
   async function startRecording() {
-    updateStatusIndicator("recording", "Recording");
 
     // Start network recording
     const networkResponse = await chrome.runtime.sendMessage({
@@ -361,7 +350,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Show processing status immediately
       updateUI();
-      updateStatusIndicator("processing", "Processing Video");
 
       // Stop video recording in content script
       const videoResponse = await chrome.tabs.sendMessage(currentTabId, {
@@ -400,7 +388,6 @@ document.addEventListener("DOMContentLoaded", () => {
     stopRecordingUI();
     currentStep = 3;
     updateUI();
-    updateStatusIndicator("ready", "Recording Complete");
   }
   function startRecordingUI(preserveStartTime = false) {
     console.log("Starting recording UI, preserveStartTime:", preserveStartTime);
@@ -528,12 +515,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // Report Bug Handler
   async function handleReportBug() {
     if (!validateForm()) {
-      updateStatusIndicator("error", "Form Incomplete");
       return;
     }
 
     try {
-      updateStatusIndicator("processing", "Creating Report");
       reportBugBtn.textContent = "Creating Jira ticket...";
       reportBugBtn.disabled = true;
 
@@ -553,7 +538,6 @@ document.addEventListener("DOMContentLoaded", () => {
       };
 
       // For now, just show success (Jira integration will be added later)
-      updateStatusIndicator("ready", "Report Ready");
       reportBugBtn.textContent = "✅ Bug Reported Successfully";
       reportBugBtn.className = "button success-btn";
 
@@ -591,11 +575,9 @@ document.addEventListener("DOMContentLoaded", () => {
           return window.jiraService.attachFilesToJira(res.key, harBlob);
         })
         .then((res) => {
-          updateStatusIndicator("ready", "Bug Reported " + res);
         });
     } catch (error) {
       console.error("Error reporting bug:", error);
-      updateStatusIndicator("error", "Report Failed");
       reportBugBtn.textContent = "Error - Try Again";
       reportBugBtn.disabled = false;
     }
@@ -643,7 +625,6 @@ document.addEventListener("DOMContentLoaded", () => {
       // Hide panels
       teamInfoPanel.classList.add("hidden");
       evidencePanel.classList.add("hidden");
-      infoContent.classList.remove("hidden");
 
       // Reset status messages
       step1Status.textContent = "Click to start selecting the buggy component";
@@ -651,11 +632,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Update UI
       updateUI();
-      updateStatusIndicator("ready", "Data Cleared");
       hideClearDataModal();
     } catch (error) {
       console.error("Error clearing data:", error);
-      updateStatusIndicator("error", "Clear Failed");
     }
   }
 
@@ -753,15 +732,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // UI Update Functions
   function updateUI() {
-    // Update progress indicator
-    progressIndicator.textContent = `Step ${currentStep} of 3`;
-
-    // Update step 1
+    console.log("Updating UI for currentStep:", bugComponentData);
+    // step 1
     if (bugComponentData) {
-      selectRegionBtn.textContent = "✅ Component Selected";
+      selectRegionBtn.textContent = "Reselect Component";
       selectRegionBtn.className = "button success-btn";
       selectRegionBtn.disabled = true;
-      step1Status.textContent = "Bug component captured successfully";
+      step1Status.textContent = `Bug module ${bugComponentData?.componentName} captured successfully`;
 
       // Enable step 2
       recordNetworkBtn.disabled = false;
@@ -788,13 +765,6 @@ document.addEventListener("DOMContentLoaded", () => {
       displayEvidencePanel();
       validateForm();
     }
-
-    // Show/hide info content
-    if (currentStep === 1 && !bugComponentData) {
-      infoContent.classList.remove("hidden");
-    } else {
-      infoContent.classList.add("hidden");
-    }
   }
 
   function displayTeamInfo(teamInfo) {
@@ -802,6 +772,7 @@ document.addEventListener("DOMContentLoaded", () => {
     managerName.textContent = teamInfo.managerName || "Unknown";
     jiraLabel.textContent = teamInfo.teamJiraLabel || "Unknown";
     slackChannel.textContent = teamInfo.slackChannel || "Unknown";
+    slackChannel.href = teamInfo.slackChannelId || "#";
     teamInfoPanel.classList.remove("hidden");
   }
 
@@ -981,11 +952,6 @@ document.addEventListener("DOMContentLoaded", () => {
       downloadBtn.style.cursor = "not-allowed";
     }
   } // End of displayEvidencePanel function
-
-  function updateStatusIndicator(type, text) {
-    statusText.textContent = text;
-    statusDot.className = `status-dot ${type}`;
-  }
 
   function updateCharCounter() {
     const count = bugDescription.value.length;
