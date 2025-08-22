@@ -846,5 +846,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if(request.action === "getRecordingBlob") {
+    if (window.currentVideoBlob) {
+    window.currentVideoBlob.arrayBuffer()
+    .then(arrayBuffer=>{
+        sendResponse({ success: true, videoData: Array.from(new Uint8Array(arrayBuffer)) });
+    })
+    } else {
+      sendResponse({ success: false, videoData: new Array() });
+    }
+    return true;
+  }
   return true;
 });
