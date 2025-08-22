@@ -459,6 +459,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Start counters update
     setInterval(updateRecordingCounters, 2000);
+
+    // Immediately update counters once
+    updateRecordingCounters();
   }
 
   function stopRecordingUI() {
@@ -529,10 +532,12 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       if (response) {
+        console.log("🐛 updateRecordingCounters response:", response);
+
         networkCounter.textContent = `${response.networkCount || 0} requests`;
-        consoleCounter.textContent = `${response.errorCount || 0} errors, ${
-          response.warningCount || 0
-        } warnings`;
+        consoleCounter.textContent = `${response.consoleCount || 0} logs`;
+
+        console.log("🐛 Console count:", response.consoleCount || 0);
       }
     } catch (error) {
       console.warn("Failed to update recording counters:", error);

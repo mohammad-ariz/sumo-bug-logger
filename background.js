@@ -369,6 +369,25 @@ async function handleStartConsoleRecording(request, sendResponse) {
       func: injectConsoleMonitor,
     });
 
+    // Also try to get existing console history if available
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        func: () => {
+          // Try to capture any existing logs if the browser provides access
+          console.log("🐛 Sumo Bug Logger: Console recording started");
+          console.log("🐛 Console monitoring active for this tab");
+
+          // Generate some test logs to verify capture
+          console.warn("🐛 Test warning - console monitoring active");
+          console.error("🐛 Test error - verify console capture");
+          console.info("🐛 Console recording initialization complete");
+        },
+      });
+    } catch (testError) {
+      console.warn("Could not inject test logs:", testError);
+    }
+
     sendResponse({ success: true });
   } catch (error) {
     console.error("Error starting console recording:", error);
@@ -518,6 +537,9 @@ function handleGetRecordingStats(request, sendResponse) {
   const consoleData = consoleRecording[tabId];
   const videoData = videoRecording[tabId];
 
+  console.log("🐛 getRecordingStats called for tab:", tabId);
+  console.log("🐛 consoleData:", consoleData);
+
   let stats = {
     networkCount: 0,
     consoleCount: 0,
@@ -541,8 +563,12 @@ function handleGetRecordingStats(request, sendResponse) {
 
   if (consoleData) {
     stats.consoleCount = consoleData.logs.length;
+    console.log("🐛 Console stats - total logs:", stats.consoleCount);
+  } else {
+    console.log("🐛 No console data found for tab:", tabId);
   }
 
+  console.log("🐛 Sending stats:", stats);
   sendResponse(stats);
 }
 
@@ -736,34 +762,64 @@ function onNetworkEvent(debuggeeId, method, params) {
 
 // Console monitoring functions (injected into pages)
 function injectConsoleMonitor() {
+  // Don't inject twice
+  if (window.sumoConsoleMonitorActive) {
+    console.log("🐛 Sumo console monitor already active");
+    return;
+  }
+
+  console.log("🐛 Injecting Sumo console monitor");
+  window.sumoConsoleMonitorActive = true;
+
   // Store original console methods
   window.sumoOriginalConsole = {
     log: console.log,
     warn: console.warn,
     error: console.error,
     info: console.info,
+    debug: console.debug,
+    trace: console.trace,
   };
 
   // Array to store console logs
   window.sumoConsoleLogs = window.sumoConsoleLogs || [];
 
-  // Override console methods
-  ["log", "warn", "error", "info"].forEach((method) => {
+  // Override console methods to capture ALL console activity
+  ["log", "warn", "error", "info", "debug", "trace"].forEach((method) => {
     console[method] = function (...args) {
-      // Call original method
+      // Call original method first
       window.sumoOriginalConsole[method].apply(console, args);
 
-      // Store log entry
-      window.sumoConsoleLogs.push({
+      // Store log entry with more details
+      const logEntry = {
         level: method,
         message: args
-          .map((arg) =>
-            typeof arg === "object" ? JSON.stringify(arg) : String(arg)
-          )
+          .map((arg) => {
+            if (typeof arg === "object") {
+              try {
+                return JSON.stringify(arg, null, 2);
+              } catch {
+                return String(arg);
+              }
+            }
+            return String(arg);
+          })
           .join(" "),
         timestamp: Date.now(),
         url: window.location.href,
-      });
+        stack: method === "error" ? new Error().stack : undefined,
+      };
+
+      window.sumoConsoleLogs.push(logEntry);
+
+      // Debug: Show that we captured the log
+      if (args[0] && args[0].toString().includes("🐛")) {
+        window.sumoOriginalConsole.log(
+          "✅ Captured test log:",
+          method,
+          args[0]
+        );
+      }
 
       // Limit log entries to prevent memory issues
       if (window.sumoConsoleLogs.length > 1000) {
@@ -774,7 +830,7 @@ function injectConsoleMonitor() {
 
   // Listen for uncaught errors
   window.addEventListener("error", (event) => {
-    window.sumoConsoleLogs.push({
+    const errorEntry = {
       level: "error",
       message: `Uncaught Error: ${event.error?.message || event.message}`,
       filename: event.filename,
@@ -782,22 +838,41 @@ function injectConsoleMonitor() {
       colno: event.colno,
       timestamp: Date.now(),
       url: window.location.href,
-    });
+      stack: event.error?.stack,
+    };
+    window.sumoConsoleLogs.push(errorEntry);
+    window.sumoOriginalConsole.error(
+      "✅ Captured uncaught error:",
+      errorEntry.message
+    );
   });
 
   // Listen for unhandled promise rejections
   window.addEventListener("unhandledrejection", (event) => {
-    window.sumoConsoleLogs.push({
+    const rejectionEntry = {
       level: "error",
       message: `Unhandled Promise Rejection: ${event.reason}`,
       timestamp: Date.now(),
       url: window.location.href,
-    });
+      stack: event.reason?.stack,
+    };
+    window.sumoConsoleLogs.push(rejectionEntry);
+    window.sumoOriginalConsole.error(
+      "✅ Captured promise rejection:",
+      rejectionEntry.message
+    );
   });
+
+  console.log("🐛 Sumo console monitor injection complete");
 }
 
 function getConsoleData() {
-  return window.sumoConsoleLogs || [];
+  const logs = window.sumoConsoleLogs || [];
+  console.log("🐛 getConsoleData called, returning", logs.length, "logs");
+  if (logs.length > 0) {
+    console.log("🐛 Sample logs:", logs.slice(0, 3));
+  }
+  return logs;
 }
 
 // Tab cleanup
