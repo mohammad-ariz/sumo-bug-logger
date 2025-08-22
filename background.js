@@ -2,6 +2,8 @@ console.log("Sumo Bug Logger background service worker loaded");
 
 // Global video blob storage for persistence across popup sessions
 let storedVideoBlob = null;
+// Global console logs storage for persistence across popup sessions
+let storedConsoleLogs = null;
 
 // Hot Reload for Development
 if (!chrome.runtime.getManifest().update_url) {
@@ -151,6 +153,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       handleGetVideoBlob(request, sendResponse);
       break;
 
+    case "storeConsoleLogs":
+      handleStoreConsoleLogs(request, sendResponse);
+      break;
+
+    case "getConsoleLogs":
+      handleGetConsoleLogs(request, sendResponse);
+      break;
+
     case "getRecordingStats":
       handleGetRecordingStats(request, sendResponse);
       break;
@@ -292,12 +302,6 @@ async function handleStopNetworkRecording(request, sendResponse) {
       networkCalls = [...(recordedData.requests || [])];
       // Add all responses
       networkCalls = [...networkCalls, ...(recordedData.responses || [])];
-
-      console.log(
-        `Retrieved ${networkCalls.length} network events (${
-          recordedData.requests?.length || 0
-        } requests, ${recordedData.responses?.length || 0} responses)`
-      );
     }
 
     // Clean up recording state
@@ -385,6 +389,12 @@ async function handleStopConsoleRecording(request, sendResponse) {
     });
 
     const consoleLogs = results[0]?.result || [];
+
+    // Store console logs in background for persistence (like video)
+    if (consoleLogs.length > 0) {
+      storedConsoleLogs = consoleLogs;
+      console.log("Stored", consoleLogs.length, "console logs in background");
+    }
 
     // Clean up console recording state
     delete consoleRecording[tabId];
@@ -510,8 +520,7 @@ function handleGetRecordingStats(request, sendResponse) {
 
   let stats = {
     networkCount: 0,
-    errorCount: 0,
-    warningCount: 0,
+    consoleCount: 0,
     isRecording: false,
     startTime: null,
   };
@@ -531,12 +540,7 @@ function handleGetRecordingStats(request, sendResponse) {
   }
 
   if (consoleData) {
-    stats.errorCount = consoleData.logs.filter(
-      (log) => log.level === "error"
-    ).length;
-    stats.warningCount = consoleData.logs.filter(
-      (log) => log.level === "warning"
-    ).length;
+    stats.consoleCount = consoleData.logs.length;
   }
 
   sendResponse(stats);
@@ -635,6 +639,10 @@ async function handleClearAllData(request, sendResponse) {
     recordingTabs.clear();
     recordingStates = {};
 
+    // Clear stored blobs and logs (like video)
+    storedVideoBlob = null;
+    storedConsoleLogs = null;
+
     // Clear all timers
     for (const tabId in recordingTimers) {
       stopBackgroundTimer(tabId);
@@ -682,13 +690,8 @@ function onNetworkEvent(debuggeeId, method, params) {
   const tabId = debuggeeId.tabId;
 
   if (!networkRecording[tabId]) {
-    console.log(
-      `Network event ${method} received but no recording for tab ${tabId}`
-    );
     return;
   }
-
-  console.log(`Network event: ${method} for tab ${tabId}`);
 
   if (method === "Network.requestWillBeSent") {
     const request = {
@@ -701,7 +704,6 @@ function onNetworkEvent(debuggeeId, method, params) {
     };
 
     networkRecording[tabId].requests.push(request);
-    console.log(`Added request: ${request.method} ${request.url}`);
   }
 
   if (method === "Network.responseReceived") {
@@ -717,7 +719,6 @@ function onNetworkEvent(debuggeeId, method, params) {
     };
 
     networkRecording[tabId].responses.push(response);
-    console.log(`Added response: ${response.status} ${response.url}`);
   }
 
   if (method === "Network.loadingFailed") {
@@ -837,6 +838,39 @@ function handleGetVideoBlob(request, sendResponse) {
     }
   } catch (error) {
     console.error("Error retrieving video blob:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+// Console logs storage handlers (following video pattern)
+function handleStoreConsoleLogs(request, sendResponse) {
+  try {
+    console.log(
+      "Storing console logs in background script, count:",
+      request.consoleLogs.length
+    );
+    storedConsoleLogs = request.consoleLogs;
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error("Error storing console logs:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+function handleGetConsoleLogs(request, sendResponse) {
+  try {
+    if (storedConsoleLogs) {
+      console.log(
+        "Retrieving stored console logs, count:",
+        storedConsoleLogs.length
+      );
+      sendResponse({ success: true, consoleLogs: storedConsoleLogs });
+    } else {
+      console.log("No stored console logs found");
+      sendResponse({ success: true, consoleLogs: [] });
+    }
+  } catch (error) {
+    console.error("Error retrieving console logs:", error);
     sendResponse({ success: false, error: error.message });
   }
 }

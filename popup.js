@@ -297,6 +297,18 @@ document.addEventListener("DOMContentLoaded", () => {
       throw new Error("Failed to start network recording");
     }
 
+    // Start console recording immediately after network recording
+    console.log("Starting console recording for tab:", currentTabId);
+    const consoleResponse = await chrome.runtime.sendMessage({
+      action: "startConsoleRecording",
+      tabId: currentTabId,
+    });
+    console.log("Console recording start response:", consoleResponse);
+
+    if (!consoleResponse || !consoleResponse.success) {
+      console.warn("Failed to start console recording:", consoleResponse);
+    }
+
     // Start video recording in content script (persists when popup closes)
     try {
       console.log("Starting video recording via content script...");
@@ -324,14 +336,6 @@ document.addEventListener("DOMContentLoaded", () => {
       // Start UI anyway if video fails - still have network/console recording
       startRecordingUI();
     }
-
-    // Start console monitoring
-    console.log("Starting console recording for tab:", currentTabId);
-    const consoleStartResponse = await chrome.runtime.sendMessage({
-      action: "startConsoleRecording",
-      tabId: currentTabId,
-    });
-    console.log("Console recording start response:", consoleStartResponse);
 
     // Note: startRecordingUI() is now called only when video recording actually starts
   }
@@ -364,8 +368,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (consoleResponse && consoleResponse.success) {
       consoleData = consoleResponse.consoleLogs || [];
       console.log("Retrieved console data:", consoleData.length, "logs");
+      console.log("Console data sample:", consoleData.slice(0, 3)); // Show first 3 logs
     } else {
       console.log("Console recording stop failed or no data");
+      console.log("Console response:", consoleResponse);
     }
 
     // Stop video recording via content script
@@ -397,11 +403,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Save recording data
+    console.log("=== SAVING RECORDING DATA ===");
+    console.log("Network data to save:", networkData.length, "events");
+    console.log("Console data to save:", consoleData.length, "logs");
+    console.log("Console data sample:", consoleData.slice(0, 3));
+
     await chrome.storage.local.set({
       networkData: networkData,
       consoleData: consoleData,
       recordingTimestamp: Date.now(),
     });
+
+    console.log("Recording data saved to storage");
 
     stopRecordingUI();
     currentStep = 3;
@@ -669,11 +682,42 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (result.consoleData && result.consoleData.length > 0) {
-        console.log("Restoring console data from storage:", result.consoleData.length, "logs");
+        console.log("=== RESTORING CONSOLE DATA FROM STORAGE ===");
+        console.log(
+          "Console data from storage:",
+          result.consoleData.length,
+          "logs"
+        );
+        console.log("Console data sample:", result.consoleData.slice(0, 3));
         consoleData = result.consoleData;
         currentStep = Math.max(currentStep, 3);
       } else {
-        console.log("No console data found in storage");
+        console.log("=== NO CONSOLE DATA IN STORAGE, CHECKING BACKGROUND ===");
+        // Try to get console logs from background script (like video does)
+        try {
+          const consoleResponse = await chrome.runtime.sendMessage({
+            action: "getConsoleLogs",
+          });
+
+          if (
+            consoleResponse &&
+            consoleResponse.success &&
+            consoleResponse.consoleLogs &&
+            consoleResponse.consoleLogs.length > 0
+          ) {
+            console.log(
+              "Retrieved console logs from background:",
+              consoleResponse.consoleLogs.length,
+              "logs"
+            );
+            consoleData = consoleResponse.consoleLogs;
+            currentStep = Math.max(currentStep, 3);
+          } else {
+            console.log("No console logs found in background either");
+          }
+        } catch (error) {
+          console.warn("Error retrieving console logs from background:", error);
+        }
       }
 
       // Restore video blob if available
@@ -926,22 +970,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Handle console evidence
-    console.log("Checking console evidence - consoleData length:", consoleData.length);
+    console.log(
+      "Checking console evidence - consoleData length:",
+      consoleData.length
+    );
     console.log("Console data:", consoleData);
-    
+
     if (consoleData.length > 0) {
-      const errorCount = consoleData.filter(
-        (log) => log.level === "error"
-      ).length;
-      const warningCount = consoleData.filter(
-        (log) => log.level === "warning"
-      ).length;
-      
-      console.log("Error count:", errorCount, "Warning count:", warningCount);
-      
+      // Calculate file size like video does
+      const consoleJson = JSON.stringify(consoleData, null, 2);
+      const sizeInBytes = new Blob([consoleJson]).size;
+      const sizeInKB = (sizeInBytes / 1024).toFixed(2);
+
+      console.log("Console file size:", sizeInKB, "KB");
+
       document.getElementById(
         "consoleSummary"
-      ).textContent = `${errorCount} errors, ${warningCount} warnings`;
+      ).textContent = `${consoleData.length} logs (${sizeInKB} KB)`;
 
       // Enable download button
       const downloadBtn = document.getElementById("downloadLogs");
@@ -1179,10 +1224,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      console.log(
-        `Converting ${networkData.length} network events to HAR format`
-      );
-
       // Convert network data to proper HAR format
       const harEntries = convertToHarEntries(networkData);
 
@@ -1247,11 +1288,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Convert network events to proper HAR entries
   function convertToHarEntries(networkEvents) {
-    console.log(
-      "Converting network events to HAR, input events:",
-      networkEvents.length
-    );
-
     const requestMap = new Map();
     const entries = [];
 
