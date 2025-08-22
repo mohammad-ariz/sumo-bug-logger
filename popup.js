@@ -63,6 +63,113 @@ document.addEventListener("DOMContentLoaded", () => {
   let videoBlob = null;
   let mediaRecorder = null;
 
+  // Function to collect browser and system information
+  function getBrowserInfo() {
+    const userAgent = navigator.userAgent;
+    let browserName = "Unknown";
+    let browserVersion = "Unknown";
+    let osInfo = "Unknown";
+
+    // Detect browser
+    if (userAgent.includes("Chrome") && !userAgent.includes("Edg")) {
+      browserName = "Google Chrome";
+      const chromeMatch = userAgent.match(/Chrome\/([0-9.]+)/);
+      browserVersion = chromeMatch ? chromeMatch[1] : "Unknown";
+    } else if (userAgent.includes("Firefox")) {
+      browserName = "Mozilla Firefox";
+      const firefoxMatch = userAgent.match(/Firefox\/([0-9.]+)/);
+      browserVersion = firefoxMatch ? firefoxMatch[1] : "Unknown";
+    } else if (userAgent.includes("Safari") && !userAgent.includes("Chrome")) {
+      browserName = "Apple Safari";
+      const safariMatch = userAgent.match(/Version\/([0-9.]+)/);
+      browserVersion = safariMatch ? safariMatch[1] : "Unknown";
+    } else if (userAgent.includes("Edg")) {
+      browserName = "Microsoft Edge";
+      const edgeMatch = userAgent.match(/Edg\/([0-9.]+)/);
+      browserVersion = edgeMatch ? edgeMatch[1] : "Unknown";
+    }
+
+    // Detect OS
+    if (userAgent.includes("Windows NT")) {
+      const windowsMatch = userAgent.match(/Windows NT ([0-9.]+)/);
+      const version = windowsMatch ? windowsMatch[1] : "";
+      const windowsVersions = {
+        "10.0": "Windows 10/11",
+        6.3: "Windows 8.1",
+        6.2: "Windows 8",
+        6.1: "Windows 7",
+      };
+      osInfo = windowsVersions[version] || "Windows " + version;
+    } else if (userAgent.includes("Mac OS X")) {
+      const macMatch = userAgent.match(/Mac OS X ([0-9_]+)/);
+      if (macMatch) {
+        const version = macMatch[1].replace(/_/g, ".");
+        osInfo = "macOS " + version;
+      } else {
+        osInfo = "macOS";
+      }
+    } else if (userAgent.includes("Linux")) {
+      osInfo = "Linux";
+    } else if (userAgent.includes("Android")) {
+      const androidMatch = userAgent.match(/Android ([0-9.]+)/);
+      osInfo = androidMatch ? "Android " + androidMatch[1] : "Android";
+    } else if (userAgent.includes("iPhone") || userAgent.includes("iPad")) {
+      const iosMatch = userAgent.match(/OS ([0-9_]+)/);
+      if (iosMatch) {
+        const version = iosMatch[1].replace(/_/g, ".");
+        osInfo = userAgent.includes("iPad")
+          ? "iPadOS " + version
+          : "iOS " + version;
+      } else {
+        osInfo = userAgent.includes("iPad") ? "iPadOS" : "iOS";
+      }
+    }
+
+    return {
+      browser: browserName,
+      version: browserVersion,
+      os: osInfo,
+      userAgent: userAgent,
+    };
+  }
+
+  // Function to format browser info for summary
+  function formatBrowserInfo() {
+    const info = getBrowserInfo();
+    return `**Environment Information:**
+- Browser: ${info.browser}
+- Browser Version: ${info.version}
+- Operating System: ${info.os}
+
+**Summary:**
+`;
+  }
+
+  // Function to ensure browser info stays at the top of summary
+  function handleSummaryInput() {
+    const currentValue = stepsToReproduce.value;
+    const browserInfoSection = formatBrowserInfo();
+
+    // Check if browser info is missing from the start
+    if (!currentValue.startsWith("**Environment Information:**")) {
+      // Find if there's any user content after the browser info
+      const userContent = currentValue.replace(
+        /^\*\*Environment Information:\*\*[\s\S]*?\*\*Summary:\*\*\s*/,
+        ""
+      );
+
+      // Reconstruct with browser info at top and user content after
+      stepsToReproduce.value = browserInfoSection + userContent;
+
+      // Move cursor to end of user content
+      const endPosition = stepsToReproduce.value.length;
+      stepsToReproduce.setSelectionRange(endPosition, endPosition);
+    }
+
+    updateCharCounter();
+    validateForm();
+  }
+
   // Initialize popup
   console.log("CALLING initializePopup()");
   initializePopup();
@@ -170,6 +277,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
       console.log("CALLING updateUI()");
       updateUI();
+
+      // Initialize browser info in summary if it's empty
+      if (stepsToReproduce && stepsToReproduce.value.trim() === "") {
+        stepsToReproduce.value = formatBrowserInfo();
+        updateCharCounter();
+      }
     } catch (error) {
       console.error("Error initializing popup:", error);
     }
@@ -184,6 +297,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Form event listeners
   bugDescription.addEventListener("input", updateCharCounter);
   bugDescription.addEventListener("input", validateForm);
+  stepsToReproduce.addEventListener("input", handleSummaryInput);
   severityLevel.addEventListener("change", validateForm);
 
   // Modal event listeners
@@ -586,8 +700,9 @@ document.addEventListener("DOMContentLoaded", () => {
         })
         .then((jiraLink) => {
           // For now, just show success (Jira integration will be added later)
-          document.querySelector('#afterJiraAddition').innerHTML = `Your Jira is created and posted in Slack: <b><a href="https://sumologic.enterprise.slack.com/archives/C08MQ8GENEN" target="_blank">Slack</a></b>`;
-          updateStatusIndicator("ready", "Report Ready");
+          document.querySelector(
+            "#afterJiraAddition"
+          ).innerHTML = `Your Jira is created and posted in Slack: <b><a href="https://sumologic.enterprise.slack.com/archives/C08MQ8GENEN" target="_blank">Slack</a></b>`;
           reportBugBtn.textContent = "✅ Bug Reported Successfully";
           reportBugBtn.className = "button success-btn";
         });
@@ -627,7 +742,10 @@ document.addEventListener("DOMContentLoaded", () => {
       bugDescription.value = "";
       // Keep default severity as 'medium' since dropdown no longer has empty option
       severityLevel.value = "medium";
-      stepsToReproduce.value = "";
+      stepsToReproduce.value = formatBrowserInfo();
+
+      // Update character counter after resetting summary
+      updateCharCounter();
 
       // Reset button states
       selectRegionBtn.textContent = "🎯 Start Selection";
