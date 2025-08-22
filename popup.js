@@ -704,7 +704,7 @@ document.addEventListener("DOMContentLoaded", () => {
             "#afterJiraAddition"
           ).innerHTML = `Your Jira is created and posted in Slack: <b><a href="https://sumologic.enterprise.slack.com/archives/C08MQ8GENEN" target="_blank">Slack</a></b>`;
           reportBugBtn.textContent = "✅ Bug Reported Successfully";
-          reportBugBtn.className = "button success-btn";
+          reportBugBtn.className = "button success-btn btn-width";
         });
     } catch (error) {
       console.error("Error reporting bug:", error);
