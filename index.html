@@ -479,7 +479,7 @@
             </div>
             <div class="indicator-item">
               <span>❌ Console:</span>
-              <span id="consoleCounter">0 errors, 0 warnings</span>
+              <span id="consoleCounter">0 logs</span>
             </div>
             <div class="indicator-item">
               <span>🎥 Video:</span>
@@ -518,70 +518,60 @@
           <div class="evidence-panel hidden" id="evidencePanel">
             <div class="evidence-header">📎 Collected Evidence</div>
 
-            <div class="evidence-item" id="screenshotEvidence">
-              <div>
-                <div>📸 Screenshot</div>
-                <div style="font-size: 10px; color: #6c757d">
-                  Click to preview
-                </div>
-              </div>
-              <div class="evidence-thumbnail" id="screenshotThumbnail">
-                🔍 View
-              </div>
-            </div>
-
-            <div class="evidence-item hidden" id="videoEvidence">
+            <div class="evidence-item" id="videoEvidence">
               <div>
                 <div>🎥 Video Recording</div>
                 <div style="font-size: 10px; color: #6c757d" id="videoDuration">
-                  Click to preview or download
+                  No video recorded
                 </div>
               </div>
-              <div style="display: flex; gap: 4px">
-                <div
-                  class="evidence-thumbnail"
-                  id="videoThumbnail"
-                  style="flex: 1"
-                >
-                  ▶️ Preview
-                </div>
-                <div
-                  class="evidence-thumbnail"
-                  id="downloadVideo"
-                  style="flex: 1; background: #28a745"
-                >
-                  ⬇️ Download
-                </div>
-              </div>
+              <button
+                class="evidence-thumbnail"
+                id="downloadVideo"
+                disabled
+                style="opacity: 0.5; cursor: not-allowed"
+              >
+                ❌ Unavailable
+              </button>
             </div>
 
-            <div class="evidence-item hidden" id="networkEvidence">
+            <div class="evidence-item" id="networkEvidence">
               <div>
                 <div>📡 Network Data</div>
                 <div
                   style="font-size: 10px; color: #6c757d"
                   id="networkSummary"
                 >
-                  HAR file
+                  No network data captured
                 </div>
               </div>
-              <button class="evidence-thumbnail" id="downloadHar">
-                ⬇️ Download
+              <button
+                class="evidence-thumbnail"
+                id="downloadHar"
+                disabled
+                style="opacity: 0.5; cursor: not-allowed"
+              >
+                ❌ Unavailable
               </button>
             </div>
 
-            <div class="evidence-item hidden" id="consoleEvidence">
+            <div class="evidence-item" id="consoleEvidence">
               <div>
                 <div>🔍 Console Logs</div>
                 <div
                   style="font-size: 10px; color: #6c757d"
                   id="consoleSummary"
                 >
-                  Text file
+                  No console data captured
                 </div>
               </div>
-              <button class="evidence-thumbnail" id="downloadLogs">
-                ⬇️ Download
+              <button
+                class="evidence-thumbnail"
+                id="downloadLogs"
+                disabled
+                style="opacity: 0.5; cursor: not-allowed"
+              >
+                ❌ Unavailable
               </button>
             </div>
           </div>

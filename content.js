@@ -9,7 +9,7 @@ let toastElement = null;
 // Component info mapping
 const COMPONENT_INFO = {
   queryEditor: "@Sanyaku/ui-observability",
-  messageTable: "@Sanyaku/ui-observability", 
+  messageTable: "@Sanyaku/ui-observability",
   logInspector: "@Sanyaku/ui-observability",
   searchBar: "@Sanyaku/ui-observability",
   filterPanel: "@Sanyaku/ui-observability",
@@ -21,7 +21,7 @@ const COMPONENT_INFO = {
   apiConnector: "@Backend/api",
   dataProcessor: "@Backend/api",
   systemStatus: "@Platform/infrastructure",
-  serverMetrics: "@Platform/infrastructure"
+  serverMetrics: "@Platform/infrastructure",
 };
 
 // Signal that content script is ready
@@ -42,7 +42,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       startComponentSelection();
       sendResponse({ success: true });
     } catch (error) {
-      console.error('Error starting component selection:', error);
+      console.error("Error starting component selection:", error);
       sendResponse({ success: false, error: error.message });
     }
   }
@@ -53,65 +53,70 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Start component selection mode
 function startComponentSelection() {
   console.log("Starting component selection mode");
-  
+
   if (isSelecting) {
     console.log("Already in selection mode, stopping first");
     stopComponentSelection();
   }
 
   isSelecting = true;
-  document.body.style.cursor = 'pointer';
-  
+  document.body.style.cursor = "pointer";
+
   // Add simple event listeners for component detection
-  document.addEventListener('mouseover', handleMouseOver, true);
-  document.addEventListener('mouseout', handleMouseOut, true);
-  document.addEventListener('click', handleComponentClick, true);
-  document.addEventListener('keydown', handleKeydown, true);
-  
+  document.addEventListener("mouseover", handleMouseOver, true);
+  document.addEventListener("mouseout", handleMouseOut, true);
+  document.addEventListener("click", handleComponentClick, true);
+  document.addEventListener("keydown", handleKeydown, true);
+
   // Show toast notification
-  showToast("Hover over elements to find components and click to select", "info");
-  
-  console.log("Component selection mode activated - hover over elements to see highlights");
+  showToast(
+    "Hover over elements to find components and click to select",
+    "info"
+  );
+
+  console.log(
+    "Component selection mode activated - hover over elements to see highlights"
+  );
 }
 
 // Simple mouse over handler
 function handleMouseOver(event) {
   if (!isSelecting) return;
-  
+
   const element = event.target;
   const componentElement = findComponentElement(element);
-  
+
   if (!componentElement) return;
-  
-  const componentName = componentElement.getAttribute('data-bug-logger-id');
+
+  const componentName = componentElement.getAttribute("data-bug-logger-id");
   if (!componentName) return;
-  
+
   // Don't re-highlight the same element
   if (highlightedElement === componentElement) return;
-  
-  console.log('Highlighting component:', componentName);
-  
+
+  console.log("Highlighting component:", componentName);
+
   // Remove previous highlight
   removeHighlight();
   removeTooltip();
-  
+
   // Highlight current element
   highlightedElement = componentElement;
-  
+
   // Store original styles
   const originalStyles = {
     outline: componentElement.style.outline,
     outlineOffset: componentElement.style.outlineOffset,
-    boxShadow: componentElement.style.boxShadow
+    boxShadow: componentElement.style.boxShadow,
   };
-  
+
   componentElement._originalStyles = originalStyles;
-  
+
   // Apply highlight styles
-  componentElement.style.outline = '2px solid #ff0000';
-  componentElement.style.outlineOffset = '2px';
-  componentElement.style.boxShadow = '0 0 0 4px rgba(255, 0, 0, 0.2)';
-  
+  componentElement.style.outline = "2px solid #ff0000";
+  componentElement.style.outlineOffset = "2px";
+  componentElement.style.boxShadow = "0 0 0 4px rgba(255, 0, 0, 0.2)";
+
   // Show tooltip with lock button
   showTooltip(event, componentName, componentElement);
 }
@@ -119,26 +124,27 @@ function handleMouseOver(event) {
 // Simple mouse out handler
 function handleMouseOut(event) {
   if (!isSelecting) return;
-  
+
   const element = event.target;
   const relatedTarget = event.relatedTarget;
-  
+
   // Don't remove highlight/tooltip if moving to the tooltip or its children
-  if (relatedTarget && (
-    relatedTarget.closest('.component-tooltip') || 
-    relatedTarget.id === 'sumo-select-component-btn'
-  )) {
+  if (
+    relatedTarget &&
+    (relatedTarget.closest(".component-tooltip") ||
+      relatedTarget.id === "sumo-select-component-btn")
+  ) {
     return;
   }
-  
+
   const componentElement = findComponentElement(element);
-  
+
   // Only remove highlight if we're leaving the highlighted component
   if (highlightedElement && componentElement !== highlightedElement) {
     // Add a small delay to prevent flickering when moving to tooltip
     setTimeout(() => {
       // Check again if we're not hovering over tooltip
-      const hoveredElement = document.querySelector('.component-tooltip:hover');
+      const hoveredElement = document.querySelector(".component-tooltip:hover");
       if (!hoveredElement && isSelecting) {
         removeHighlight();
         removeTooltip();
@@ -150,29 +156,29 @@ function handleMouseOut(event) {
 // Simple click handler
 function handleComponentClick(event) {
   if (!isSelecting) return;
-  
+
   // If clicking on the select button, let that handler take care of it
-  if (event.target.id === 'sumo-select-component-btn') {
+  if (event.target.id === "sumo-select-component-btn") {
     return;
   }
-  
+
   const element = event.target;
   const componentElement = findComponentElement(element);
-  
+
   if (!componentElement) return;
-  
-  const componentName = componentElement.getAttribute('data-bug-logger-id');
+
+  const componentName = componentElement.getAttribute("data-bug-logger-id");
   if (!componentName) return;
-  
+
   // Prevent default click behavior
   event.preventDefault();
   event.stopPropagation();
-  
+
   console.log(`Direct click - Component selected: ${componentName}`);
-  
+
   // Get team owner info
   const teamOwner = COMPONENT_INFO[componentName] || "Unknown Team";
-  
+
   // Capture screenshot of the selected component
   captureComponentScreenshot(componentElement, componentName, teamOwner);
 }
@@ -180,8 +186,8 @@ function handleComponentClick(event) {
 // Simple keydown handler
 function handleKeydown(event) {
   if (!isSelecting) return;
-  
-  if (event.key === 'Escape') {
+
+  if (event.key === "Escape") {
     event.preventDefault();
     stopComponentSelection();
     showToast("Component selection cancelled", "info");
@@ -191,16 +197,16 @@ function handleKeydown(event) {
 // Stop component selection mode
 function stopComponentSelection() {
   console.log("Stopping component selection mode");
-  
+
   isSelecting = false;
-  document.body.style.cursor = '';
-  
+  document.body.style.cursor = "";
+
   // Remove simple event listeners
-  document.removeEventListener('mouseover', handleMouseOver, true);
-  document.removeEventListener('mouseout', handleMouseOut, true);
-  document.removeEventListener('click', handleComponentClick, true);
-  document.removeEventListener('keydown', handleKeydown, true);
-  
+  document.removeEventListener("mouseover", handleMouseOver, true);
+  document.removeEventListener("mouseout", handleMouseOut, true);
+  document.removeEventListener("click", handleComponentClick, true);
+  document.removeEventListener("keydown", handleKeydown, true);
+
   // Clean up UI elements
   removeHighlight();
   removeTooltip();
@@ -212,31 +218,31 @@ function findComponentElement(startElement) {
   let element = startElement;
   let maxDepth = 10; // Prevent infinite loops
   let depth = 0;
-  
+
   while (element && element !== document.body && depth < maxDepth) {
     // Ensure element has getAttribute method and actually has the data-bug-logger-id attribute
-    if (element.getAttribute && typeof element.getAttribute === 'function') {
-      const componentAttr = element.getAttribute('data-bug-logger-id');
-      
-      if (componentAttr && componentAttr.trim() !== '') {
+    if (element.getAttribute && typeof element.getAttribute === "function") {
+      const componentAttr = element.getAttribute("data-bug-logger-id");
+
+      if (componentAttr && componentAttr.trim() !== "") {
         return element;
       }
     }
     element = element.parentElement;
     depth++;
   }
-  
+
   return null;
 }
 
 // Show tooltip with component information
 function showTooltip(event, componentName, componentElement) {
   removeTooltip(); // Remove any existing tooltip first
-  
+
   const moduleOwner = COMPONENT_INFO[componentName] || "Unknown Team";
-  
-  componentTooltip = document.createElement('div');
-  componentTooltip.className = 'component-tooltip';
+
+  componentTooltip = document.createElement("div");
+  componentTooltip.className = "component-tooltip";
   componentTooltip.innerHTML = `
     <div style="
       position: fixed;
@@ -267,43 +273,43 @@ function showTooltip(event, componentName, componentElement) {
       ">Select Component</button>
     </div>
   `;
-  
+
   // Position tooltip near mouse cursor but in a more accessible location
   const tooltip = componentTooltip.firstElementChild;
   const mouseX = event.clientX;
   const mouseY = event.clientY;
-  
+
   // Calculate position with boundary checks - position below and to the right for easier access
   let left = mouseX + 15;
   let top = mouseY + 15;
-  
+
   // Check right boundary
   if (left + 220 > window.innerWidth) {
     left = mouseX - 235; // Position to the left
   }
-  
+
   // Check bottom boundary
   if (top + 80 > window.innerHeight) {
     top = mouseY - 95; // Position above
   }
-  
+
   // Ensure minimum distance from edges
   left = Math.max(10, Math.min(left, window.innerWidth - 230));
   top = Math.max(10, Math.min(top, window.innerHeight - 90));
-  
-  tooltip.style.left = left + 'px';
-  tooltip.style.top = top + 'px';
-  
+
+  tooltip.style.left = left + "px";
+  tooltip.style.top = top + "px";
+
   document.body.appendChild(componentTooltip);
-  
+
   // Add mouse event handlers to tooltip to keep it stable
   const tooltipDiv = componentTooltip.firstElementChild;
-  tooltipDiv.addEventListener('mouseenter', function() {
+  tooltipDiv.addEventListener("mouseenter", function () {
     // Keep tooltip stable when hovering over it
     clearTimeout(window.tooltipRemovalTimeout);
   });
-  
-  tooltipDiv.addEventListener('mouseleave', function() {
+
+  tooltipDiv.addEventListener("mouseleave", function () {
     // Remove tooltip when leaving it (with small delay)
     window.tooltipRemovalTimeout = setTimeout(() => {
       if (isSelecting) {
@@ -312,23 +318,27 @@ function showTooltip(event, componentName, componentElement) {
       }
     }, 200);
   });
-  
+
   // Add click handler to the select button
-  const selectBtn = document.getElementById('sumo-select-component-btn');
+  const selectBtn = document.getElementById("sumo-select-component-btn");
   if (selectBtn) {
-    selectBtn.addEventListener('click', function(e) {
+    selectBtn.addEventListener("click", function (e) {
       e.preventDefault();
       e.stopPropagation();
       console.log(`Button clicked - selecting component: ${componentName}`);
       console.log(`Component element:`, componentElement);
       console.log(`Module owner:`, moduleOwner);
-      
+
       try {
         // Capture screenshot of the selected component
-        captureComponentScreenshot(componentElement, componentName, moduleOwner);
+        captureComponentScreenshot(
+          componentElement,
+          componentName,
+          moduleOwner
+        );
       } catch (error) {
-        console.error('Error in button click handler:', error);
-        showToast('Error selecting component. Please try again.', 'error');
+        console.error("Error in button click handler:", error);
+        showToast("Error selecting component. Please try again.", "error");
       }
     });
   }
@@ -341,7 +351,7 @@ function removeTooltip() {
     clearTimeout(window.tooltipRemovalTimeout);
     window.tooltipRemovalTimeout = null;
   }
-  
+
   if (componentTooltip) {
     componentTooltip.remove();
     componentTooltip = null;
@@ -353,32 +363,38 @@ function removeHighlight() {
   if (highlightedElement) {
     const element = highlightedElement;
     const originalStyles = element._originalStyles;
-    
+
     if (originalStyles) {
       // Restore original styles
-      element.style.outline = originalStyles.outline || '';
-      element.style.outlineOffset = originalStyles.outlineOffset || '';
-      element.style.boxShadow = originalStyles.boxShadow || '';
-      
+      element.style.outline = originalStyles.outline || "";
+      element.style.outlineOffset = originalStyles.outlineOffset || "";
+      element.style.boxShadow = originalStyles.boxShadow || "";
+
       // Clean up stored properties
       delete element._originalStyles;
     }
-    
+
     highlightedElement = null;
   }
 }
 
 // Show toast notification
-function showToast(message, type = 'info') {
+function showToast(message, type = "info") {
   removeToast();
-  
-  toastElement = document.createElement('div');
+
+  toastElement = document.createElement("div");
   toastElement.innerHTML = `
     <div style="
       position: fixed;
       top: 20px;
       right: 20px;
-      background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#2196F3'};
+      background: ${
+        type === "success"
+          ? "#4CAF50"
+          : type === "error"
+          ? "#f44336"
+          : "#2196F3"
+      };
       color: white;
       padding: 12px 20px;
       border-radius: 4px;
@@ -393,11 +409,11 @@ function showToast(message, type = 'info') {
       ${message}
     </div>
   `;
-  
+
   // Add CSS animation
-  if (!document.getElementById('toast-styles')) {
-    const style = document.createElement('style');
-    style.id = 'toast-styles';
+  if (!document.getElementById("toast-styles")) {
+    const style = document.createElement("style");
+    style.id = "toast-styles";
     style.textContent = `
       @keyframes slideInRight {
         from { transform: translateX(100%); opacity: 0; }
@@ -406,9 +422,9 @@ function showToast(message, type = 'info') {
     `;
     document.head.appendChild(style);
   }
-  
+
   document.body.appendChild(toastElement);
-  
+
   // Auto remove after 3 seconds
   setTimeout(() => {
     removeToast();
@@ -426,30 +442,32 @@ function removeToast() {
 // Capture screenshot of selected component
 async function captureComponentScreenshot(element, componentName, teamOwner) {
   try {
-    console.log(`📸 Starting screenshot capture for component: ${componentName}`);
+    console.log(
+      `📸 Starting screenshot capture for component: ${componentName}`
+    );
     console.log(`Element:`, element);
     console.log(`Team owner:`, teamOwner);
-    
+
     if (!element) {
-      throw new Error('No element provided for screenshot');
+      throw new Error("No element provided for screenshot");
     }
-    
+
     // Get element position and dimensions
     const rect = element.getBoundingClientRect();
     console.log(`Element rect:`, rect);
-    
+
     // Create team info based on team owner
     const teamInfo = {
-      teamName: teamOwner.replace('@', '').split('/')[1] || "Unknown Team",
+      teamName: teamOwner.replace("@", "").split("/")[1] || "Unknown Team",
       teamJiraLabel: "Component Bug",
       managerName: "Team Lead",
-      managerId: `${teamOwner.replace('@', '').toLowerCase()}@company.com`,
+      managerId: `${teamOwner.replace("@", "").toLowerCase()}@company.com`,
       slackChannel: teamOwner,
       slackChannelId: "C0000000000",
     };
-    
+
     console.log(`Team info created:`, teamInfo);
-    
+
     const elementInfo = {
       x: rect.left + window.scrollX,
       y: rect.top + window.scrollY,
@@ -461,53 +479,64 @@ async function captureComponentScreenshot(element, componentName, teamOwner) {
       url: window.location.href,
       timestamp: new Date().toISOString(),
       selector: getElementSelector(element),
-      screenshot: generateComponentScreenshot(rect)
+      screenshot: generateComponentScreenshot(rect),
     };
-    
+
     console.log(`Element info created:`, elementInfo);
-    
+
     // Stop selection mode
     stopComponentSelection();
-    
+
     console.log(`📤 Sending component data to background script...`);
-    
+
     // Check if chrome.runtime is available
     if (!chrome || !chrome.runtime) {
-      throw new Error('Chrome extension context not available');
+      throw new Error("Chrome extension context not available");
     }
-    
+
     // Store component data first (this always works)
     chrome.storage.local.set({ bugComponentData: elementInfo }, (result) => {
       if (chrome.runtime.lastError) {
-        console.error('Error saving to storage:', chrome.runtime.lastError);
-        showToast('Error saving component data. Please try again.', 'error');
+        console.error("Error saving to storage:", chrome.runtime.lastError);
+        showToast("Error saving component data. Please try again.", "error");
         return;
       } else {
-        console.log('✅ Component data saved to storage');
-        showToast(`Component "${componentName}" selected successfully!`, 'success');
+        console.log("✅ Component data saved to storage");
+        showToast(
+          `Component "${componentName}" selected successfully!`,
+          "success"
+        );
       }
     });
-    
+
     // Try to notify background script (but don't fail if it doesn't work)
     try {
-      chrome.runtime.sendMessage({
-        action: 'componentSelected',
-        data: elementInfo
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.log('Background script notification failed (this is OK):', chrome.runtime.lastError.message);
-        } else {
-          console.log('Background script notified successfully:', response);
+      chrome.runtime.sendMessage(
+        {
+          action: "componentSelected",
+          data: elementInfo,
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            console.log(
+              "Background script notification failed (this is OK):",
+              chrome.runtime.lastError.message
+            );
+          } else {
+            console.log("Background script notified successfully:", response);
+          }
         }
-      });
+      );
     } catch (error) {
-      console.log('Could not notify background script (this is OK):', error.message);
+      console.log(
+        "Could not notify background script (this is OK):",
+        error.message
+      );
     }
-    
   } catch (error) {
-    console.error('❌ Error capturing component screenshot:', error);
-    console.error('Error stack:', error.stack);
-    showToast(`Error: ${error.message}`, 'error');
+    console.error("❌ Error capturing component screenshot:", error);
+    console.error("Error stack:", error.stack);
+    showToast(`Error: ${error.message}`, "error");
     stopComponentSelection();
   }
 }
@@ -515,31 +544,39 @@ async function captureComponentScreenshot(element, componentName, teamOwner) {
 // Generate a simple screenshot placeholder for the component
 function generateComponentScreenshot(rect) {
   try {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+
     canvas.width = Math.max(200, rect.width);
     canvas.height = Math.max(100, rect.height);
-    
+
     // Create a placeholder screenshot
-    ctx.fillStyle = '#f8f9fa';
+    ctx.fillStyle = "#f8f9fa";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
+
     // Add border
-    ctx.strokeStyle = '#ff0000';
+    ctx.strokeStyle = "#ff0000";
     ctx.lineWidth = 2;
     ctx.strokeRect(0, 0, canvas.width, canvas.height);
-    
+
     // Add text
-    ctx.fillStyle = '#333';
-    ctx.font = '14px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('Component Screenshot', canvas.width / 2, canvas.height / 2 - 10);
-    ctx.fillText(`${Math.round(rect.width)}x${Math.round(rect.height)}`, canvas.width / 2, canvas.height / 2 + 10);
-    
-    return canvas.toDataURL('image/png');
+    ctx.fillStyle = "#333";
+    ctx.font = "14px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(
+      "Component Screenshot",
+      canvas.width / 2,
+      canvas.height / 2 - 10
+    );
+    ctx.fillText(
+      `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+      canvas.width / 2,
+      canvas.height / 2 + 10
+    );
+
+    return canvas.toDataURL("image/png");
   } catch (error) {
-    console.error('Error generating component screenshot:', error);
+    console.error("Error generating component screenshot:", error);
     return null;
   }
 }
@@ -549,20 +586,20 @@ function getElementSelector(element) {
   if (element.id) {
     return `#${element.id}`;
   }
-  
+
   if (element.className) {
-    const classes = Array.from(element.classList).join('.');
+    const classes = Array.from(element.classList).join(".");
     if (classes) {
       return `.${classes}`;
     }
   }
-  
+
   // Fallback to tag name with data-bug-logger-id attribute
-  const componentName = element.getAttribute('data-bug-logger-id');
+  const componentName = element.getAttribute("data-bug-logger-id");
   if (componentName) {
     return `${element.tagName.toLowerCase()}[data-bug-logger-id="${componentName}"]`;
   }
-  
+
   return element.tagName.toLowerCase();
 }
 
@@ -570,21 +607,31 @@ function getElementSelector(element) {
 function sendMessageWithRetry(message, maxRetries = 3, delay = 500) {
   return new Promise((resolve, reject) => {
     let attempts = 0;
-    
+
     function attemptSend() {
       attempts++;
-      console.log(`Attempt ${attempts}/${maxRetries} to send message:`, message);
-      
+      console.log(
+        `Attempt ${attempts}/${maxRetries} to send message:`,
+        message
+      );
+
       try {
         chrome.runtime.sendMessage(message, (response) => {
           if (chrome.runtime.lastError) {
-            console.error(`Attempt ${attempts} failed:`, chrome.runtime.lastError);
-            
+            console.error(
+              `Attempt ${attempts} failed:`,
+              chrome.runtime.lastError
+            );
+
             if (attempts < maxRetries) {
               console.log(`Retrying in ${delay}ms...`);
               setTimeout(attemptSend, delay);
             } else {
-              reject(new Error(`Failed after ${maxRetries} attempts: ${chrome.runtime.lastError.message}`));
+              reject(
+                new Error(
+                  `Failed after ${maxRetries} attempts: ${chrome.runtime.lastError.message}`
+                )
+              );
             }
           } else {
             console.log(`Message sent successfully on attempt ${attempts}`);
@@ -593,7 +640,7 @@ function sendMessageWithRetry(message, maxRetries = 3, delay = 500) {
         });
       } catch (error) {
         console.error(`Attempt ${attempts} threw error:`, error);
-        
+
         if (attempts < maxRetries) {
           console.log(`Retrying in ${delay}ms...`);
           setTimeout(attemptSend, delay);
@@ -602,16 +649,202 @@ function sendMessageWithRetry(message, maxRetries = 3, delay = 500) {
         }
       }
     }
-    
+
     attemptSend();
   });
 }
 
 // Clean up when page unloads
-window.addEventListener('beforeunload', () => {
+window.addEventListener("beforeunload", () => {
   if (isSelecting) {
     stopComponentSelection();
   }
 });
 
-console.log("Sumo Bug Logger content script initialized");
+// Video recording variables for persistence
+let mediaRecorder = null;
+let videoStream = null;
+let recordedChunks = [];
+
+// Video recording functions
+async function startVideoRecording() {
+  try {
+    console.log("Starting video recording in content script");
+
+    // Get screen capture stream
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { mediaSource: "screen" },
+      audio: true,
+    });
+
+    videoStream = stream;
+    recordedChunks = [];
+
+    // Create MediaRecorder
+    mediaRecorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        recordedChunks.push(event.data);
+        console.log("Video chunk received, size:", event.data.size);
+      }
+    };
+
+    mediaRecorder.onstop = async () => {
+      console.log(
+        "MediaRecorder stopped, total chunks:",
+        recordedChunks.length
+      );
+
+      if (recordedChunks.length > 0) {
+        const videoBlob = new Blob(recordedChunks, { type: "video/webm" });
+        console.log("Video blob created, size:", videoBlob.size);
+
+        // Stop all tracks
+        if (videoStream) {
+          videoStream.getTracks().forEach((track) => track.stop());
+        }
+
+        // Store video blob in content script memory (persists when popup closes)
+        window.currentVideoBlob = videoBlob;
+
+        // Save metadata to Chrome storage
+        try {
+          await chrome.storage.local.set({
+            videoData: {
+              hasVideo: true,
+              size: videoBlob.size,
+              type: videoBlob.type,
+              timestamp: Date.now(),
+            },
+          });
+          console.log(
+            "Video metadata saved to storage, actual video size:",
+            videoBlob.size
+          );
+        } catch (error) {
+          console.error("Error saving video metadata:", error);
+        }
+      }
+
+      // Clean up
+      mediaRecorder = null;
+      videoStream = null;
+      recordedChunks = [];
+    };
+
+    // Start recording
+    mediaRecorder.start();
+    console.log("MediaRecorder started in content script");
+
+    return true;
+  } catch (error) {
+    console.error("Error starting video recording:", error);
+    throw error;
+  }
+}
+
+async function stopVideoRecording() {
+  try {
+    console.log("Stopping video recording in content script");
+
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      mediaRecorder.stop();
+      console.log("MediaRecorder stop() called");
+    } else {
+      console.log("MediaRecorder not active or not available");
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error stopping video recording:", error);
+    throw error;
+  }
+}
+
+// Add video recording message handlers
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log("Content script received message:", request);
+
+  if (request.action === "startRegionSelection") {
+    try {
+      startRegionSelection();
+      sendResponse({ success: true });
+    } catch (error) {
+      console.error("Error starting region selection:", error);
+      sendResponse({ success: false, error: error.message });
+    }
+    return true;
+  }
+
+  if (request.action === "startVideoRecording") {
+    startVideoRecording()
+      .then(() => {
+        sendResponse({ success: true });
+      })
+      .catch((error) => {
+        console.error("Error starting video recording:", error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Keep the message channel open for async response
+  }
+
+  if (request.action === "stopVideoRecording") {
+    stopVideoRecording()
+      .then(() => {
+        sendResponse({ success: true });
+      })
+      .catch((error) => {
+        console.error("Error stopping video recording:", error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Keep the message channel open for async response
+  }
+
+  if (request.action === "getVideoBlob") {
+    console.log("Handling getVideoBlob request");
+    console.log("Current video blob exists?", !!window.currentVideoBlob);
+
+    // Return the video blob if available
+    if (window.currentVideoBlob) {
+      console.log("Video blob size:", window.currentVideoBlob.size);
+      console.log("Video blob type:", window.currentVideoBlob.type);
+      sendResponse({
+        success: true,
+        hasVideo: true,
+        size: window.currentVideoBlob.size,
+        type: window.currentVideoBlob.type,
+      });
+    } else {
+      console.log("No video blob found");
+      sendResponse({ success: true, hasVideo: false });
+    }
+    return true;
+  }
+
+  if (request.action === "downloadVideo") {
+    // Handle video download from content script
+    if (window.currentVideoBlob) {
+      try {
+        const url = URL.createObjectURL(window.currentVideoBlob);
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = url;
+        a.download = `bug-video-${Date.now()}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error("Error downloading video:", error);
+        sendResponse({ success: false, error: error.message });
+      }
+    } else {
+      sendResponse({ success: false, error: "No video available" });
+    }
+    return true;
+  }
+
+  return true;
+});

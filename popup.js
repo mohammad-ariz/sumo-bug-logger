@@ -1,7 +1,8 @@
 // Import functions will be available globally since they're loaded via manifest.json
 
-
 document.addEventListener("DOMContentLoaded", () => {
+  console.log("POPUP SCRIPT LOADED - DOM ready");
+
   // Initialize all UI elements
   const statusDot = document.getElementById("statusDot");
   const statusText = document.getElementById("statusText");
@@ -36,12 +37,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const slackChannel = document.getElementById("slackChannel");
 
   // Evidence elements
-  const screenshotEvidence = document.getElementById("screenshotEvidence");
   const videoEvidence = document.getElementById("videoEvidence");
   const networkEvidence = document.getElementById("networkEvidence");
   const consoleEvidence = document.getElementById("consoleEvidence");
-  const screenshotThumbnail = document.getElementById("screenshotThumbnail");
-  const videoThumbnail = document.getElementById("videoThumbnail");
+  const downloadScreenshot = document.getElementById("downloadScreenshot");
   const downloadHar = document.getElementById("downloadHar");
   const downloadLogs = document.getElementById("downloadLogs");
 
@@ -73,9 +72,11 @@ document.addEventListener("DOMContentLoaded", () => {
   let mediaRecorder = null;
 
   // Initialize popup
+  console.log("CALLING initializePopup()");
   initializePopup();
 
   async function initializePopup() {
+    console.log("INSIDE initializePopup()");
     try {
       // Get current tab
       const [tab] = await chrome.tabs.query({
@@ -116,9 +117,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      // Load existing data
-      await loadExistingData();
-
       // Check if recording is in progress
       const recordingState = await chrome.runtime.sendMessage({
         action: "getRecordingState",
@@ -126,9 +124,60 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       if (recordingState && recordingState.isRecording) {
-        startRecordingUI();
+        isRecording = true;
+        currentStep = Math.max(currentStep, 2); // Ensure we're at least on step 2
+
+        // Get the original recording start time from background
+        const stats = await chrome.runtime.sendMessage({
+          action: "getRecordingStats",
+          tabId: currentTabId,
+        });
+
+        if (stats && stats.startTime) {
+          recordingStartTime = stats.startTime;
+          console.log(
+            "Restored recording start time:",
+            new Date(recordingStartTime)
+          );
+        } else {
+          // Fallback: use current time minus a reasonable default
+          recordingStartTime = Date.now() - 10000; // Assume 10 seconds ago
+          console.log(
+            "No start time found, using fallback:",
+            new Date(recordingStartTime)
+          );
+        }
+
+        startRecordingUI(true); // Preserve start time
+
+        // Don't start new recording, just restore UI state
+        console.log("Recording already in progress, restoring UI state");
       }
 
+      // Check for existing video recording and restore blob
+      const storedVideo = await chrome.storage.local.get(["videoData"]);
+      if (storedVideo.videoData && !videoBlob) {
+        try {
+          // Restore video blob from stored array buffer
+          if (storedVideo.videoData.data) {
+            const uint8Array = new Uint8Array(storedVideo.videoData.data);
+            videoBlob = new Blob([uint8Array], {
+              type: storedVideo.videoData.type || "video/webm",
+            });
+            console.log("Video blob restored during initialization");
+          }
+        } catch (error) {
+          console.warn("Could not restore video blob:", error);
+        }
+      }
+
+      // Load existing data (only if we didn't clear due to navigation)
+      await loadExistingData();
+
+      // If no region data found, try again after a short delay
+      // This handles timing issues where content script just saved data
+
+      console.log("CALLING updateUI() and updateStorageUsage()");
       updateUI();
       updateStorageUsage();
     } catch (error) {
@@ -153,8 +202,7 @@ document.addEventListener("DOMContentLoaded", () => {
   modalConfirm.addEventListener("click", handleClearData);
 
   // Evidence thumbnail listeners
-  screenshotThumbnail.addEventListener("click", previewScreenshot);
-  videoThumbnail.addEventListener("click", previewVideo);
+
   document
     .getElementById("downloadVideo")
     .addEventListener("click", downloadVideo);
@@ -165,7 +213,8 @@ document.addEventListener("DOMContentLoaded", () => {
   async function handleComponentSelection() {
     try {
       updateStatusIndicator("processing", "Selecting Component");
-      step1Status.textContent = "Hover over components with data-component attributes and click to select";
+      step1Status.textContent =
+        "Hover over components with data-component attributes and click to select";
       selectRegionBtn.textContent = "Component Selection Active...";
       selectRegionBtn.className = "button warning-btn";
       selectRegionBtn.disabled = true;
@@ -229,40 +278,47 @@ document.addEventListener("DOMContentLoaded", () => {
       throw new Error("Failed to start network recording");
     }
 
-    // Start video recording
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { mediaSource: "screen" },
-        audio: true,
-      });
-
-      mediaRecorder = new MediaRecorder(stream, { mimeType: "video/webm" });
-      const recordedChunks = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          recordedChunks.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = () => {
-        videoBlob = new Blob(recordedChunks, { type: "video/webm" });
-        stream.getTracks().forEach((track) => track.stop());
-      };
-
-      mediaRecorder.start();
-    } catch (videoError) {
-      console.warn("Video recording failed:", videoError);
-      // Continue without video recording
-    }
-
-    // Start console monitoring
-    await chrome.runtime.sendMessage({
+    // Start console recording immediately after network recording
+    console.log("Starting console recording for tab:", currentTabId);
+    const consoleResponse = await chrome.runtime.sendMessage({
       action: "startConsoleRecording",
       tabId: currentTabId,
     });
+    console.log("Console recording start response:", consoleResponse);
 
-    startRecordingUI();
+    if (!consoleResponse || !consoleResponse.success) {
+      console.warn("Failed to start console recording:", consoleResponse);
+    }
+
+    // Start video recording in content script (persists when popup closes)
+    try {
+      console.log("Starting video recording via content script...");
+
+      const videoResponse = await chrome.tabs.sendMessage(currentTabId, {
+        action: "startVideoRecording",
+      });
+
+      if (videoResponse && videoResponse.success) {
+        console.log("Video recording started successfully in content script");
+      } else {
+        throw new Error("Failed to start video recording in content script");
+      }
+
+      // Start the timer UI only after video recording actually starts
+      startRecordingUI();
+
+      // Notify background script that video recording started
+      await chrome.runtime.sendMessage({
+        action: "startVideoRecording",
+        tabId: currentTabId,
+      });
+    } catch (videoError) {
+      console.warn("Video recording failed:", videoError);
+      // Start UI anyway if video fails - still have network/console recording
+      startRecordingUI();
+    }
+
+    // Note: startRecordingUI() is now called only when video recording actually starts
   }
 
   async function stopRecording() {
@@ -283,47 +339,110 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Stop console recording
+    console.log("Stopping console recording for tab:", currentTabId);
     const consoleResponse = await chrome.runtime.sendMessage({
       action: "stopConsoleRecording",
       tabId: currentTabId,
     });
+    console.log("Console recording stop response:", consoleResponse);
 
     if (consoleResponse && consoleResponse.success) {
       consoleData = consoleResponse.consoleLogs || [];
+      console.log("Retrieved console data:", consoleData.length, "logs");
+      console.log("Console data sample:", consoleData.slice(0, 3)); // Show first 3 logs
+    } else {
+      console.log("Console recording stop failed or no data");
+      console.log("Console response:", consoleResponse);
     }
 
-    // Stop video recording
-    if (mediaRecorder && mediaRecorder.state === "recording") {
-      mediaRecorder.stop();
+    // Stop video recording via content script
+    try {
+      console.log("=== STOP VIDEO RECORDING FUNCTION CALLED ===");
+
+      // Show processing status immediately
+      updateUI();
+      updateStatusIndicator("processing", "Processing Video");
+
+      // Stop video recording in content script
+      const videoResponse = await chrome.tabs.sendMessage(currentTabId, {
+        action: "stopVideoRecording",
+      });
+
+      if (videoResponse && videoResponse.success) {
+        console.log("Video recording stopped successfully in content script");
+      } else {
+        console.error("Failed to stop video recording in content script");
+      }
+
+      // Notify background script that video recording stopped
+      await chrome.runtime.sendMessage({
+        action: "stopVideoRecording",
+        tabId: currentTabId,
+      });
+    } catch (videoError) {
+      console.warn("Error stopping video recording:", videoError);
     }
 
     // Save recording data
+    console.log("=== SAVING RECORDING DATA ===");
+    console.log("Network data to save:", networkData.length, "events");
+    console.log("Console data to save:", consoleData.length, "logs");
+    console.log("Console data sample:", consoleData.slice(0, 3));
+
     await chrome.storage.local.set({
       networkData: networkData,
       consoleData: consoleData,
       recordingTimestamp: Date.now(),
     });
 
+    console.log("Recording data saved to storage");
+
     stopRecordingUI();
     currentStep = 3;
     updateUI();
     updateStatusIndicator("ready", "Recording Complete");
   }
-
-  function startRecordingUI() {
+  function startRecordingUI(preserveStartTime = false) {
+    console.log("Starting recording UI, preserveStartTime:", preserveStartTime);
     isRecording = true;
-    recordingStartTime = Date.now();
+
+    // Only set new start time if not preserving existing one
+    if (!preserveStartTime || !recordingStartTime) {
+      recordingStartTime = Date.now();
+      console.log(
+        "Set new recording start time:",
+        new Date(recordingStartTime)
+      );
+    } else {
+      console.log(
+        "Preserving existing start time:",
+        new Date(recordingStartTime)
+      );
+    }
 
     recordNetworkBtn.textContent = "⏹️ Stop Recording";
     recordNetworkBtn.className = "button danger-btn";
     step2Status.textContent = "Recording in progress - reproduce the bug now";
     recordingIndicators.classList.remove("hidden");
 
+    // Clear any existing timer before starting new one
+    if (timerInterval) {
+      console.log("Clearing existing timer interval");
+      clearInterval(timerInterval);
+    }
+
     // Start timer
+    console.log("Starting timer interval");
     timerInterval = setInterval(updateRecordingTimer, 1000);
+
+    // Immediately update timer once
+    updateRecordingTimer();
 
     // Start counters update
     setInterval(updateRecordingCounters, 2000);
+
+    // Immediately update counters once
+    updateRecordingCounters();
   }
 
   function stopRecordingUI() {
@@ -342,15 +461,46 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function updateRecordingTimer() {
-    if (!recordingStartTime) return;
+  async function updateRecordingTimer() {
+    if (!isRecording) {
+      console.log("Timer update called but not recording");
+      return;
+    }
 
-    const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
-    const minutes = Math.floor(elapsed / 60)
-      .toString()
-      .padStart(2, "0");
-    const seconds = (elapsed % 60).toString().padStart(2, "0");
-    recordingTimer.textContent = `${minutes}:${seconds}`;
+    try {
+      // Get elapsed time from background script
+      const response = await chrome.runtime.sendMessage({
+        action: "getRecordingStats",
+        tabId: currentTabId,
+      });
+
+      if (response && response.startTime) {
+        const elapsed = Math.floor((Date.now() - response.startTime) / 1000);
+        const minutes = Math.floor(elapsed / 60)
+          .toString()
+          .padStart(2, "0");
+        const seconds = (elapsed % 60).toString().padStart(2, "0");
+        recordingTimer.textContent = `${minutes}:${seconds}`;
+        console.log("Timer updated from background:", `${minutes}:${seconds}`);
+      } else {
+        throw new Error("No background stats available");
+      }
+    } catch (error) {
+      console.log("Background timer failed, using fallback:", error.message);
+      // Fallback to local calculation if background call fails
+      if (recordingStartTime) {
+        const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+        const minutes = Math.floor(elapsed / 60)
+          .toString()
+          .padStart(2, "0");
+        const seconds = (elapsed % 60).toString().padStart(2, "0");
+        recordingTimer.textContent = `${minutes}:${seconds}`;
+        console.log("Timer updated from fallback:", `${minutes}:${seconds}`);
+      } else {
+        console.error("No recording start time available for timer");
+        recordingTimer.textContent = "00:00";
+      }
+    }
   }
 
   async function updateRecordingCounters() {
@@ -363,10 +513,12 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       if (response) {
+        console.log("🐛 updateRecordingCounters response:", response);
+
         networkCounter.textContent = `${response.networkCount || 0} requests`;
-        consoleCounter.textContent = `${response.errorCount || 0} errors, ${
-          response.warningCount || 0
-        } warnings`;
+        consoleCounter.textContent = `${response.consoleCount || 0} logs`;
+
+        console.log("🐛 Console count:", response.consoleCount || 0);
       }
     } catch (error) {
       console.warn("Failed to update recording counters:", error);
@@ -412,35 +564,35 @@ document.addEventListener("DOMContentLoaded", () => {
       // await createJiraTicket(bugReport);
       // await notifySlackChannel(bugReport);
 
-      window.jiraService.getCurrentUser()
-      .then(res =>{
-        const reporterId = res.accountId;
-        const assigneeId = reporterId
-        const projectId = "10057" // sumo project ID
-        const priority = "2" // Medium priority
-        const componentName = "Query editor"
-        const parentKey = 'SUMO-268781' // hack sumo issue epic
-        const componentId = '10702' // logs/metric UI
-        return window.jiraService.createJiraIssue({
-          assigneeId: assigneeId,
-          componentId: componentId,
-          description: bugReport.description,
-          projectId: projectId,
-          reporterId: reporterId,
-          summary: componentName + " - " + (bugReport.description || "Bug Report"),
-          priority,
-          parentKey
+      window.jiraService
+        .getCurrentUser()
+        .then((res) => {
+          const reporterId = res.accountId;
+          const assigneeId = reporterId;
+          const projectId = "10057"; // sumo project ID
+          const priority = "2"; // Medium priority
+          const componentName = "Query editor";
+          const parentKey = "SUMO-268781"; // hack sumo issue epic
+          const componentId = "10702"; // logs/metric UI
+          return window.jiraService.createJiraIssue({
+            assigneeId: assigneeId,
+            componentId: componentId,
+            description: bugReport.description,
+            projectId: projectId,
+            reporterId: reporterId,
+            summary:
+              componentName + " - " + (bugReport.description || "Bug Report"),
+            priority,
+            parentKey,
+          });
+        })
+        .then((res) => {
+          const harBlob = window.utils.createHarBlob(networkData);
+          return window.jiraService.attachFilesToJira(res.key, harBlob);
+        })
+        .then((res) => {
+          updateStatusIndicator("ready", "Bug Reported " + res);
         });
-      })
-      .then(res=>{
-        const harBlob = window.utils.createHarBlob(networkData);
-        return window.jiraService.attachFilesToJira(res.key , harBlob);
-      })
-      .then((res) => {
-        updateStatusIndicator("ready", "Bug Reported " + res);
-      })
-
-
     } catch (error) {
       console.error("Error reporting bug:", error);
       updateStatusIndicator("error", "Report Failed");
@@ -494,8 +646,7 @@ document.addEventListener("DOMContentLoaded", () => {
       infoContent.classList.remove("hidden");
 
       // Reset status messages
-      step1Status.textContent =
-        "Click to start selecting the buggy component";
+      step1Status.textContent = "Click to start selecting the buggy component";
       step2Status.textContent = "Record your steps to reproduce the bug";
 
       // Update UI
@@ -515,12 +666,17 @@ document.addEventListener("DOMContentLoaded", () => {
         "bugComponentData",
         "networkData",
         "consoleData",
+        "videoData",
         "bugReport",
       ]);
 
       if (result.bugComponentData) {
         bugComponentData = result.bugComponentData;
         currentStep = Math.max(currentStep, 2);
+        console.log(
+          "Loaded bugRegionData, setting currentStep to:",
+          currentStep
+        );
 
         // Show team info
         if (bugComponentData.teamInfo) {
@@ -533,8 +689,60 @@ document.addEventListener("DOMContentLoaded", () => {
         currentStep = Math.max(currentStep, 3);
       }
 
-      if (result.consoleData) {
+      if (result.consoleData && result.consoleData.length > 0) {
+        console.log("=== RESTORING CONSOLE DATA FROM STORAGE ===");
+        console.log(
+          "Console data from storage:",
+          result.consoleData.length,
+          "logs"
+        );
+        console.log("Console data sample:", result.consoleData.slice(0, 3));
         consoleData = result.consoleData;
+        currentStep = Math.max(currentStep, 3);
+      } else {
+        console.log("=== NO CONSOLE DATA IN STORAGE, CHECKING BACKGROUND ===");
+        // Try to get console logs from background script (like video does)
+        try {
+          const consoleResponse = await chrome.runtime.sendMessage({
+            action: "getConsoleLogs",
+          });
+
+          if (
+            consoleResponse &&
+            consoleResponse.success &&
+            consoleResponse.consoleLogs &&
+            consoleResponse.consoleLogs.length > 0
+          ) {
+            console.log(
+              "Retrieved console logs from background:",
+              consoleResponse.consoleLogs.length,
+              "logs"
+            );
+            consoleData = consoleResponse.consoleLogs;
+            currentStep = Math.max(currentStep, 3);
+          } else {
+            console.log("No console logs found in background either");
+          }
+        } catch (error) {
+          console.warn("Error retrieving console logs from background:", error);
+        }
+      }
+
+      // Restore video blob if available
+      if (result.videoData && !videoBlob) {
+        try {
+          // Restore video blob from stored array buffer
+          if (result.videoData.data) {
+            const uint8Array = new Uint8Array(result.videoData.data);
+            videoBlob = new Blob([uint8Array], {
+              type: result.videoData.type || "video/webm",
+            });
+            console.log("Video blob restored from storage");
+            currentStep = Math.max(currentStep, 3);
+          }
+        } catch (error) {
+          console.warn("Could not restore video blob:", error);
+        }
       }
 
       updateUI();
@@ -600,49 +808,179 @@ document.addEventListener("DOMContentLoaded", () => {
   function displayEvidencePanel() {
     evidencePanel.classList.remove("hidden");
 
-    // Show screenshot evidence
-    if (bugComponentData && bugComponentData.screenshot) {
-      screenshotEvidence.classList.remove("hidden");
-      // Set the thumbnail image
-      screenshotThumbnail.style.backgroundImage = `url(${bugComponentData.screenshot})`;
-      screenshotThumbnail.style.backgroundSize = "cover";
-      screenshotThumbnail.style.backgroundPosition = "center";
-      screenshotThumbnail.style.backgroundRepeat = "no-repeat";
-    }
+    videoEvidence.classList.remove("hidden");
+    networkEvidence.classList.remove("hidden");
+    consoleEvidence.classList.remove("hidden");
 
-    // Show video evidence
+    // Handle video evidence
+    console.log(
+      "Checking video evidence - videoBlob exists:",
+      !!videoBlob,
+      "isRecording:",
+      isRecording
+    );
     if (videoBlob) {
-      videoEvidence.classList.remove("hidden");
-      // Calculate and show duration and size
+      // Calculate and show file size
       const sizeInMB = (videoBlob.size / (1024 * 1024)).toFixed(2);
       document.getElementById(
         "videoDuration"
-      ).textContent = `${sizeInMB} MB - Click to preview or download`;
+      ).textContent = `${sizeInMB} MB video file`;
+
+      // Enable download button
+      const downloadBtn = document.getElementById("downloadVideo");
+      downloadBtn.disabled = false;
+      downloadBtn.textContent = "⬇️ Download";
+      downloadBtn.style.opacity = "1";
+      downloadBtn.style.cursor = "pointer";
+    } else if (isRecording) {
+      // Currently recording
+      document.getElementById("videoDuration").textContent =
+        "Recording in progress...";
+      const downloadBtn = document.getElementById("downloadVideo");
+      downloadBtn.disabled = true;
+      downloadBtn.textContent = "🔄 Recording...";
+      downloadBtn.style.opacity = "0.5";
+      downloadBtn.style.cursor = "not-allowed";
+    } else {
+      // Check if video is available in content script
+      console.log("Trying to restore video from content script...");
+
+      // Async function to handle video restoration
+      (async () => {
+        try {
+          console.log("Current tab ID:", currentTabId);
+
+          console.log("Sending getVideoBlob message to content script...");
+          const response = await chrome.tabs.sendMessage(currentTabId, {
+            action: "getVideoBlob",
+          });
+
+          console.log("Content script response:", response);
+
+          if (response && response.success && response.hasVideo) {
+            console.log("Content script has video blob, size:", response.size);
+
+            // Show video is available
+            const sizeInMB = (response.size / (1024 * 1024)).toFixed(2);
+            document.getElementById(
+              "videoDuration"
+            ).textContent = `${sizeInMB} MB video file`;
+
+            const downloadBtn = document.getElementById("downloadVideo");
+            downloadBtn.disabled = false;
+            downloadBtn.textContent = "⬇️ Download";
+            downloadBtn.style.opacity = "1";
+            downloadBtn.style.cursor = "pointer";
+          } else {
+            throw new Error("No video available in content script");
+          }
+        } catch (error) {
+          console.log("Could not get video from content script:", error);
+
+          // Fallback: Check storage for metadata only
+          chrome.storage.local.get(["videoData"]).then((result) => {
+            console.log("Storage result for videoData:", result);
+            if (result.videoData && result.videoData.hasVideo) {
+              console.log(
+                "Found video metadata in storage, size:",
+                result.videoData.size
+              );
+
+              // Show that video was recorded but may not be available
+              const sizeInMB = (result.videoData.size / (1024 * 1024)).toFixed(
+                2
+              );
+              document.getElementById(
+                "videoDuration"
+              ).textContent = `${sizeInMB} MB video (not available)`;
+
+              const downloadBtn = document.getElementById("downloadVideo");
+              downloadBtn.disabled = true;
+              downloadBtn.textContent = "⚠️ Lost";
+              downloadBtn.style.opacity = "0.5";
+              downloadBtn.style.cursor = "not-allowed";
+            } else {
+              // No video data available
+              console.log("No video metadata found in storage");
+              document.getElementById("videoDuration").textContent =
+                "No video recorded";
+              const downloadBtn = document.getElementById("downloadVideo");
+              downloadBtn.disabled = true;
+              downloadBtn.textContent = "⬇️ Download";
+              downloadBtn.style.opacity = "0.5";
+              downloadBtn.style.cursor = "not-allowed";
+            }
+          });
+        }
+      })();
     }
 
-    // Show network evidence
+    // Handle network evidence
     if (networkData.length > 0) {
-      networkEvidence.classList.remove("hidden");
       const size = calculateDataSize(networkData);
       document.getElementById(
         "networkSummary"
       ).textContent = `${networkData.length} requests, ${size}`;
+
+      // Enable download button
+      const downloadBtn = document.getElementById("downloadHar");
+      downloadBtn.disabled = false;
+      downloadBtn.textContent = "⬇️ Download";
+      downloadBtn.style.opacity = "1";
+      downloadBtn.style.cursor = "pointer";
+    } else {
+      // No network data
+      document.getElementById("networkSummary").textContent =
+        "No network data captured";
+
+      // Disable download button
+      const downloadBtn = document.getElementById("downloadHar");
+      downloadBtn.disabled = true;
+      downloadBtn.textContent = "⬇️ Download";
+      downloadBtn.style.opacity = "0.5";
+      downloadBtn.style.cursor = "not-allowed";
     }
 
-    // Show console evidence
+    // Handle console evidence
+    console.log(
+      "Checking console evidence - consoleData length:",
+      consoleData.length
+    );
+    console.log("Console data:", consoleData);
+
     if (consoleData.length > 0) {
-      consoleEvidence.classList.remove("hidden");
-      const errorCount = consoleData.filter(
-        (log) => log.level === "error"
-      ).length;
-      const warningCount = consoleData.filter(
-        (log) => log.level === "warning"
-      ).length;
+      // Calculate file size like video does
+      const consoleJson = JSON.stringify(consoleData, null, 2);
+      const sizeInBytes = new Blob([consoleJson]).size;
+      const sizeInKB = (sizeInBytes / 1024).toFixed(2);
+
+      console.log("Console file size:", sizeInKB, "KB");
+
       document.getElementById(
         "consoleSummary"
-      ).textContent = `${errorCount} errors, ${warningCount} warnings`;
+      ).textContent = `${consoleData.length} logs (${sizeInKB} KB)`;
+
+      // Enable download button
+      const downloadBtn = document.getElementById("downloadLogs");
+      console.log("Enabling console download button");
+      downloadBtn.disabled = false;
+      downloadBtn.textContent = "⬇️ Download";
+      downloadBtn.style.opacity = "1";
+      downloadBtn.style.cursor = "pointer";
+    } else {
+      console.log("No console data found, disabling download button");
+      // No console data
+      document.getElementById("consoleSummary").textContent =
+        "No console data captured";
+
+      // Disable download button
+      const downloadBtn = document.getElementById("downloadLogs");
+      downloadBtn.disabled = true;
+      downloadBtn.textContent = "⬇️ Download";
+      downloadBtn.style.opacity = "0.5";
+      downloadBtn.style.cursor = "not-allowed";
     }
-  }
+  } // End of displayEvidencePanel function
 
   function updateStatusIndicator(type, text) {
     statusText.textContent = text;
@@ -675,49 +1013,134 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Evidence Preview Functions
-  function previewScreenshot() {
-    if (bugComponentData && bugComponentData.screenshot) {
-      const newTab = window.open();
-      newTab.document.write(
-        `<img src="${bugComponentData.screenshot}" style="max-width: 100%; height: auto;">`
-      );
-    }
-  }
+  // Universal download helper function
+  function triggerDownload(blob, filename, mimeType = null) {
+    console.log(
+      `Triggering download for ${filename}, blob size: ${blob.size} bytes`
+    );
 
-  function previewVideo() {
-    if (videoBlob) {
-      const url = URL.createObjectURL(videoBlob);
-      const newTab = window.open();
-      newTab.document.write(
-        `<video controls style="max-width: 100%; height: auto;"><source src="${url}" type="video/webm"></video>`
-      );
-    }
-  }
-
-  function downloadVideo() {
-    if (videoBlob) {
-      const url = URL.createObjectURL(videoBlob);
+    try {
+      // Method 1: Try direct blob download
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
+      a.style.display = "none";
       a.href = url;
-      a.download = `screen-recording-${Date.now()}.webm`;
+      a.download = filename;
+
+      // Ensure the element is added to DOM
+      document.body.appendChild(a);
+
+      // Force click
       a.click();
-      URL.revokeObjectURL(url);
+
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+
+      console.log(`Download initiated successfully for ${filename}`);
+      return true;
+    } catch (error) {
+      console.error(`Download failed for ${filename}:`, error);
+
+      // Method 2: Try using chrome downloads API (fallback)
+      try {
+        const reader = new FileReader();
+        reader.onload = function () {
+          const dataUrl = reader.result;
+          const a = document.createElement("a");
+          a.href = dataUrl;
+          a.download = filename;
+          a.click();
+        };
+        reader.readAsDataURL(blob);
+        console.log(`Fallback download method attempted for ${filename}`);
+        return true;
+      } catch (fallbackError) {
+        console.error(
+          `Fallback download also failed for ${filename}:`,
+          fallbackError
+        );
+        alert(
+          `Download failed for ${filename}. Please check browser permissions.`
+        );
+        return false;
+      }
+    }
+  }
+
+  // Test function to verify downloads work
+  function testDownload() {
+    console.log("Testing download functionality");
+    const testData =
+      "This is a test file created by Sumo Bug Logger\\n" +
+      "If you can see this file, downloads are working correctly!\\n" +
+      "Timestamp: " +
+      new Date().toISOString();
+    const blob = new Blob([testData], { type: "text/plain" });
+    const success = triggerDownload(blob, `test-download-${Date.now()}.txt`);
+
+    if (success) {
+      console.log("Test download completed successfully");
+    } else {
+      console.error("Test download failed");
+    }
+  }
+
+  // Debug function to check data state
+
+  async function downloadVideo() {
+    console.log("Download video clicked - delegating to content script");
+
+    try {
+      console.log(
+        "Attempting to download video from content script, tab ID:",
+        currentTabId
+      );
+      const response = await chrome.tabs.sendMessage(currentTabId, {
+        action: "downloadVideo",
+      });
+
+      if (response && response.success) {
+        console.log("Video download initiated from content script");
+      } else {
+        throw new Error("Content script download failed");
+      }
+    } catch (error) {
+      console.error("Error downloading video via content script:", error);
+      alert("Error downloading video. Please try recording again.");
     }
   }
 
   function downloadHarFile() {
-    if (networkData.length > 0) {
-      console.log(
-        `Converting ${networkData.length} network events to HAR format`
-      );
-      console.log("Raw network data:", networkData);
+    console.log(
+      "Download HAR clicked, networkData length:",
+      networkData.length
+    );
+    console.log("Network data sample:", networkData.slice(0, 3));
 
+    if (networkData.length === 0) {
+      alert(
+        "No network data available for download. Please record some network activity first."
+      );
+      return;
+    }
+
+    try {
       // Convert network data to proper HAR format
       const harEntries = convertToHarEntries(networkData);
 
       console.log(`Generated ${harEntries.length} HAR entries`);
       console.log("HAR entries sample:", harEntries.slice(0, 2));
+
+      if (harEntries.length === 0) {
+        console.warn("No valid HAR entries generated from network data");
+        alert(
+          "No valid network requests found to export. Please try recording network activity again."
+        );
+        return;
+      }
 
       const harData = {
         log: {
@@ -742,16 +1165,28 @@ document.addEventListener("DOMContentLoaded", () => {
         },
       };
 
+      console.log("Final HAR data structure:", {
+        entryCount: harData.log.entries.length,
+        creator: harData.log.creator,
+      });
+
       const blob = new Blob([JSON.stringify(harData, null, 2)], {
         type: "application/json",
       });
 
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `network-data-${Date.now()}.har`;
-      a.click();
-      URL.revokeObjectURL(url);
+      console.log("Created blob with size:", blob.size, "bytes");
+
+      const success = triggerDownload(
+        blob,
+        `network-data-${Date.now()}.har`,
+        "application/json"
+      );
+      if (success) {
+        console.log("HAR download initiated successfully");
+      }
+    } catch (error) {
+      console.error("Error creating HAR file:", error);
+      alert("Error creating HAR file. Please check the console for details.");
     }
   }
 
@@ -761,89 +1196,111 @@ document.addEventListener("DOMContentLoaded", () => {
     const entries = [];
 
     // Group requests and responses by requestId
-    networkEvents.forEach((event) => {
-      const requestId = event.requestId;
+    networkEvents.forEach((event, index) => {
+      try {
+        const requestId = event.requestId;
 
-      if (!requestMap.has(requestId)) {
-        requestMap.set(requestId, {});
-      }
+        if (!requestId) {
+          console.warn(`Event ${index} missing requestId:`, event);
+          return;
+        }
 
-      if (event.type === "request") {
-        requestMap.get(requestId).request = event;
-      } else if (event.type === "response") {
-        requestMap.get(requestId).response = event;
-      } else if (event.type === "failure") {
-        requestMap.get(requestId).failure = event;
+        if (!requestMap.has(requestId)) {
+          requestMap.set(requestId, {});
+        }
+
+        if (event.type === "request") {
+          requestMap.get(requestId).request = event;
+        } else if (event.type === "response") {
+          requestMap.get(requestId).response = event;
+        } else if (event.type === "failure") {
+          requestMap.get(requestId).failure = event;
+        }
+      } catch (error) {
+        console.warn(`Error processing event ${index}:`, error, event);
       }
     });
+
+    console.log(`Grouped into ${requestMap.size} unique requests`);
 
     // Convert to HAR entries
     requestMap.forEach((data, requestId) => {
-      const request = data.request;
-      const response = data.response;
-      const failure = data.failure;
+      try {
+        const request = data.request;
+        const response = data.response;
+        const failure = data.failure;
 
-      if (!request) return; // Skip if no request data
+        if (!request) {
+          console.warn(`No request data for requestId ${requestId}`);
+          return; // Skip if no request data
+        }
 
-      // Convert Chrome timestamp to ISO string
-      const startTime = new Date(request.timestamp * 1000).toISOString();
+        // Convert Chrome timestamp to ISO string
+        const startTime = new Date(request.timestamp * 1000).toISOString();
 
-      const entry = {
-        pageref: "page_1",
-        startedDateTime: startTime,
-        time: response
-          ? Math.round((response.timestamp - request.timestamp) * 1000)
-          : 0,
-        request: {
-          method: request.method || "GET",
-          url: request.url || "",
-          httpVersion: "HTTP/1.1",
-          headers: convertHeaders(request.headers || {}),
-          queryString: [],
-          cookies: [],
-          headersSize: -1,
-          bodySize: -1,
-        },
-        response: response
-          ? {
-              status: response.status || 0,
-              statusText: response.statusText || "",
-              httpVersion: "HTTP/1.1",
-              headers: convertHeaders(response.headers || {}),
-              cookies: [],
-              content: {
-                size: -1,
-                mimeType: response.mimeType || "text/plain",
-              },
-              headersSize: -1,
-              bodySize: -1,
-            }
-          : {
-              status: failure ? 0 : 200,
-              statusText: failure ? failure.errorText || "Failed" : "OK",
-              httpVersion: "HTTP/1.1",
-              headers: [],
-              cookies: [],
-              content: {
-                size: 0,
-                mimeType: "text/plain",
-              },
-              headersSize: -1,
-              bodySize: -1,
-            },
-        cache: {},
-        timings: {
-          send: 0,
-          wait: response
+        const entry = {
+          pageref: "page_1",
+          startedDateTime: startTime,
+          time: response
             ? Math.round((response.timestamp - request.timestamp) * 1000)
             : 0,
-          receive: 0,
-        },
-      };
+          request: {
+            method: request.method || "GET",
+            url: request.url || "",
+            httpVersion: "HTTP/1.1",
+            headers: convertHeaders(request.headers || {}),
+            queryString: [],
+            cookies: [],
+            headersSize: -1,
+            bodySize: -1,
+          },
+          response: response
+            ? {
+                status: response.status || 0,
+                statusText: response.statusText || "",
+                httpVersion: "HTTP/1.1",
+                headers: convertHeaders(response.headers || {}),
+                cookies: [],
+                content: {
+                  size: -1,
+                  mimeType: response.mimeType || "text/plain",
+                },
+                headersSize: -1,
+                bodySize: -1,
+              }
+            : {
+                status: failure ? 0 : 200,
+                statusText: failure ? failure.errorText || "Failed" : "OK",
+                httpVersion: "HTTP/1.1",
+                headers: [],
+                cookies: [],
+                content: {
+                  size: 0,
+                  mimeType: "text/plain",
+                },
+                headersSize: -1,
+                bodySize: -1,
+              },
+          cache: {},
+          timings: {
+            send: 0,
+            wait: response
+              ? Math.round((response.timestamp - request.timestamp) * 1000)
+              : 0,
+            receive: 0,
+          },
+        };
 
-      entries.push(entry);
+        entries.push(entry);
+      } catch (error) {
+        console.warn(
+          `Error creating HAR entry for requestId ${requestId}:`,
+          error
+        );
+      }
     });
 
+    console.log(`Successfully created ${entries.length} HAR entries`);
     return entries;
   }
 
@@ -858,7 +1315,19 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function downloadLogsFile() {
-    if (consoleData.length > 0) {
+    console.log(
+      "Download logs clicked, consoleData length:",
+      consoleData.length
+    );
+
+    if (consoleData.length === 0) {
+      alert(
+        "No console logs available for download. Please record some console activity first."
+      );
+      return;
+    }
+
+    try {
       const logsText = consoleData
         .map(
           (log) =>
@@ -869,12 +1338,17 @@ document.addEventListener("DOMContentLoaded", () => {
         .join("\\n");
 
       const blob = new Blob([logsText], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `console-logs-${Date.now()}.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const success = triggerDownload(
+        blob,
+        `console-logs-${Date.now()}.txt`,
+        "text/plain"
+      );
+      if (success) {
+        console.log("Logs download initiated successfully");
+      }
+    } catch (error) {
+      console.error("Error creating logs file:", error);
+      alert("Error creating logs file. Please check the console for details.");
     }
   }
 
@@ -888,14 +1362,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Listen for storage changes
   chrome.storage.onChanged.addListener((changes, namespace) => {
+    console.log("STORAGE CHANGE EVENT:", { changes, namespace });
+
     if (namespace === "local") {
       if (changes.bugComponentData) {
         bugComponentData = changes.bugComponentData.newValue;
         if (bugComponentData && bugComponentData.teamInfo) {
           displayTeamInfo(bugComponentData.teamInfo);
         }
+        console.log(
+          "STORAGE CHANGE - setting currentStep to:",
+          Math.max(currentStep, 2)
+        );
         currentStep = Math.max(currentStep, 2);
         updateUI();
+      } else {
+        console.log("Storage change but no bugRegionData in changes");
       }
       updateStorageUsage();
     }
@@ -903,4 +1385,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Update storage usage periodically
   setInterval(updateStorageUsage, 5000);
+
+  // Debug function to test button update
+  window.testButtonUpdate = function () {
+    console.log("Testing button update...");
+    console.log("selectRegionBtn element:", selectRegionBtn);
+    console.log("Current button text:", selectRegionBtn.textContent);
+    console.log("Current button class:", selectRegionBtn.className);
+
+    // Try to update button manually
+    selectRegionBtn.textContent = "✅ Test Update";
+    selectRegionBtn.className = "button success-btn";
+    selectRegionBtn.disabled = true;
+
+    console.log("After manual update:");
+    console.log("Button text:", selectRegionBtn.textContent);
+    console.log("Button class:", selectRegionBtn.className);
+    console.log("Button disabled:", selectRegionBtn.disabled);
+  };
+
+  // Simple test function
+  window.testConsole = function () {
+    console.log("CONSOLE TEST - this should appear");
+    alert("Console test - popup script is working");
+  };
 });

@@ -1,5 +1,10 @@
 console.log("Sumo Bug Logger background service worker loaded");
 
+// Global video blob storage for persistence across popup sessions
+let storedVideoBlob = null;
+// Global console logs storage for persistence across popup sessions
+let storedConsoleLogs = null;
+
 // Hot Reload for Development
 if (!chrome.runtime.getManifest().update_url) {
   // We're in development mode, enable hot reload
@@ -89,8 +94,10 @@ if (!chrome.runtime.getManifest().update_url) {
 // Global state management
 let networkRecording = {};
 let consoleRecording = {};
+let videoRecording = {};
 let recordingTabs = new Set();
 let recordingStates = {};
+let recordingTimers = {}; // Background timers for each tab
 
 // Chrome runtime startup
 chrome.runtime.onStartup.addListener(() => {
@@ -130,8 +137,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       handleStopConsoleRecording(request, sendResponse);
       break;
 
+    case "startVideoRecording":
+      handleStartVideoRecording(request, sendResponse);
+      break;
+
+    case "stopVideoRecording":
+      handleStopVideoRecording(request, sendResponse);
+      break;
+
+    case "storeVideoBlob":
+      handleStoreVideoBlob(request, sendResponse);
+      break;
+
+    case "getVideoBlob":
+      handleGetVideoBlob(request, sendResponse);
+      break;
+
+    case "storeConsoleLogs":
+      handleStoreConsoleLogs(request, sendResponse);
+      break;
+
+    case "getConsoleLogs":
+      handleGetConsoleLogs(request, sendResponse);
+      break;
+
     case "getRecordingStats":
       handleGetRecordingStats(request, sendResponse);
+      break;
+
+    case "getRecordingState":
+      handleGetRecordingState(request, sendResponse);
       break;
 
     case "clearAllData":
@@ -237,8 +272,11 @@ async function handleStartNetworkRecording(request, sendResponse) {
     recordingTabs.add(tabId);
     recordingStates[tabId] = {
       networkRecording: true,
-      startTime: Date.now(),
+      startTime: null, // Don't set start time until video actually starts
+      isRecording: false, // Not fully recording until video starts
     };
+
+    // Don't start timer yet - wait for video recording to actually start
 
     // Ensure we have the network event listener
     if (!chrome.debugger.onEvent.hasListener(onNetworkEvent)) {
@@ -273,12 +311,6 @@ async function handleStopNetworkRecording(request, sendResponse) {
       networkCalls = [...(recordedData.requests || [])];
       // Add all responses
       networkCalls = [...networkCalls, ...(recordedData.responses || [])];
-
-      console.log(
-        `Retrieved ${networkCalls.length} network events (${
-          recordedData.requests?.length || 0
-        } requests, ${recordedData.responses?.length || 0} responses)`
-      );
     }
 
     // Clean up recording state
@@ -286,6 +318,16 @@ async function handleStopNetworkRecording(request, sendResponse) {
     recordingTabs.delete(tabId);
     if (recordingStates[tabId]) {
       recordingStates[tabId].networkRecording = false;
+
+      // Check if all recordings are stopped for this tab
+      const stillRecording =
+        recordingStates[tabId].consoleRecording ||
+        recordingStates[tabId].videoRecording;
+
+      if (!stillRecording) {
+        recordingStates[tabId].isRecording = false;
+        stopBackgroundTimer(tabId);
+      }
     }
 
     sendResponse({
@@ -314,6 +356,20 @@ async function handleStartConsoleRecording(request, sendResponse) {
 
     if (recordingStates[tabId]) {
       recordingStates[tabId].consoleRecording = true;
+      recordingStates[tabId].isRecording = true;
+      // Set start time if not already set (fallback if video recording failed)
+      if (!recordingStates[tabId].startTime) {
+        recordingStates[tabId].startTime = Date.now();
+        startBackgroundTimer(tabId);
+      }
+    } else {
+      recordingStates[tabId] = {
+        consoleRecording: true,
+        startTime: Date.now(),
+        isRecording: true,
+      };
+      // Start background timer for console recording
+      startBackgroundTimer(tabId);
     }
 
     // Inject console monitoring script
@@ -321,6 +377,25 @@ async function handleStartConsoleRecording(request, sendResponse) {
       target: { tabId: tabId },
       func: injectConsoleMonitor,
     });
+
+    // Also try to get existing console history if available
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        func: () => {
+          // Try to capture any existing logs if the browser provides access
+          console.log("🐛 Sumo Bug Logger: Console recording started");
+          console.log("🐛 Console monitoring active for this tab");
+
+          // Generate some test logs to verify capture
+          console.warn("🐛 Test warning - console monitoring active");
+          console.error("🐛 Test error - verify console capture");
+          console.info("🐛 Console recording initialization complete");
+        },
+      });
+    } catch (testError) {
+      console.warn("Could not inject test logs:", testError);
+    }
 
     sendResponse({ success: true });
   } catch (error) {
@@ -343,10 +418,26 @@ async function handleStopConsoleRecording(request, sendResponse) {
 
     const consoleLogs = results[0]?.result || [];
 
+    // Store console logs in background for persistence (like video)
+    if (consoleLogs.length > 0) {
+      storedConsoleLogs = consoleLogs;
+      console.log("Stored", consoleLogs.length, "console logs in background");
+    }
+
     // Clean up console recording state
     delete consoleRecording[tabId];
     if (recordingStates[tabId]) {
       recordingStates[tabId].consoleRecording = false;
+
+      // Check if all recordings are stopped for this tab
+      const stillRecording =
+        recordingStates[tabId].networkRecording ||
+        recordingStates[tabId].videoRecording;
+
+      if (!stillRecording) {
+        recordingStates[tabId].isRecording = false;
+        stopBackgroundTimer(tabId);
+      }
     }
 
     sendResponse({
@@ -359,32 +450,208 @@ async function handleStopConsoleRecording(request, sendResponse) {
   }
 }
 
+// Video Recording Handlers
+async function handleStartVideoRecording(request, sendResponse) {
+  const tabId = request.tabId;
+  const streamId = request.streamId;
+
+  try {
+    console.log("Starting video recording for tab:", tabId);
+
+    // Check if already recording for this tab
+    if (videoRecording[tabId]) {
+      console.log("Already video recording for this tab");
+      sendResponse({ success: true });
+      return;
+    }
+
+    // Store video recording state
+    videoRecording[tabId] = {
+      startTime: Date.now(),
+      streamId: streamId,
+      chunks: [],
+    };
+
+    if (recordingStates[tabId]) {
+      recordingStates[tabId].videoRecording = true;
+      recordingStates[tabId].isRecording = true;
+      // Set start time when video actually starts
+      if (!recordingStates[tabId].startTime) {
+        recordingStates[tabId].startTime = Date.now();
+        // Start background timer when video actually begins
+        startBackgroundTimer(tabId);
+      }
+    } else {
+      recordingStates[tabId] = {
+        videoRecording: true,
+        startTime: Date.now(),
+        isRecording: true,
+      };
+      // Start background timer when video recording starts
+      startBackgroundTimer(tabId);
+    }
+
+    console.log(`Video recording initialized for tab ${tabId}`);
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error("Error starting video recording:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+async function handleStopVideoRecording(request, sendResponse) {
+  const tabId = request.tabId;
+
+  try {
+    console.log("Stopping video recording for tab:", tabId);
+
+    const videoData = videoRecording[tabId];
+    if (!videoData) {
+      console.log("No video recording found for tab:", tabId);
+      sendResponse({ success: false, error: "No recording found" });
+      return;
+    }
+
+    // Clean up video recording state
+    delete videoRecording[tabId];
+    if (recordingStates[tabId]) {
+      recordingStates[tabId].videoRecording = false;
+
+      // Check if all recordings are stopped for this tab
+      const stillRecording =
+        recordingStates[tabId].networkRecording ||
+        recordingStates[tabId].consoleRecording;
+
+      if (!stillRecording) {
+        recordingStates[tabId].isRecording = false;
+        stopBackgroundTimer(tabId);
+      }
+    }
+
+    console.log(`Video recording stopped for tab ${tabId}`);
+    sendResponse({
+      success: true,
+      videoData: videoData,
+    });
+  } catch (error) {
+    console.error("Error stopping video recording:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
 // Recording Stats Handler
 function handleGetRecordingStats(request, sendResponse) {
   const tabId = request.tabId;
   const networkData = networkRecording[tabId];
   const consoleData = consoleRecording[tabId];
+  const videoData = videoRecording[tabId];
+
+  console.log("🐛 getRecordingStats called for tab:", tabId);
+  console.log("🐛 consoleData:", consoleData);
 
   let stats = {
     networkCount: 0,
-    errorCount: 0,
-    warningCount: 0,
+    consoleCount: 0,
+    isRecording: false,
+    startTime: null,
   };
+
+  // Check if any recording is active
+  const recordingState = recordingStates[tabId];
+  if (recordingState) {
+    stats.isRecording =
+      recordingState.networkRecording ||
+      recordingState.consoleRecording ||
+      recordingState.videoRecording;
+    stats.startTime = recordingState.startTime;
+  }
 
   if (networkData) {
     stats.networkCount = networkData.requests.length;
   }
 
   if (consoleData) {
-    stats.errorCount = consoleData.logs.filter(
-      (log) => log.level === "error"
-    ).length;
-    stats.warningCount = consoleData.logs.filter(
-      (log) => log.level === "warning"
-    ).length;
+    stats.consoleCount = consoleData.logs.length;
+    console.log("🐛 Console stats - total logs:", stats.consoleCount);
+  } else {
+    console.log("🐛 No console data found for tab:", tabId);
   }
 
+  console.log("🐛 Sending stats:", stats);
   sendResponse(stats);
+}
+
+// Recording State Handler
+function handleGetRecordingState(request, sendResponse) {
+  const tabId = request.tabId;
+  const recordingState = recordingStates[tabId];
+
+  const state = {
+    isRecording: false,
+    networkRecording: false,
+    consoleRecording: false,
+    videoRecording: false,
+  };
+
+  if (recordingState) {
+    state.isRecording =
+      recordingState.networkRecording ||
+      recordingState.consoleRecording ||
+      recordingState.videoRecording;
+    state.networkRecording = recordingState.networkRecording || false;
+    state.consoleRecording = recordingState.consoleRecording || false;
+    state.videoRecording = recordingState.videoRecording || false;
+  }
+
+  sendResponse(state);
+}
+
+// Background Timer Management
+function startBackgroundTimer(tabId) {
+  // Don't start if timer already exists
+  if (recordingTimers[tabId]) {
+    console.log("Timer already running for tab:", tabId);
+    return;
+  }
+
+  console.log("Starting background timer for tab:", tabId);
+
+  // Start a timer that updates every second
+  recordingTimers[tabId] = setInterval(() => {
+    const recordingState = recordingStates[tabId];
+    if (!recordingState || !recordingState.isRecording) {
+      // Recording stopped, clean up timer
+      stopBackgroundTimer(tabId);
+      return;
+    }
+
+    // Timer is running - background can track elapsed time
+    const elapsed = Math.floor((Date.now() - recordingState.startTime) / 1000);
+
+    // Store current elapsed time for popup to use
+    recordingState.elapsedTime = elapsed;
+
+    // Log every 10 seconds for debugging
+    if (elapsed % 10 === 0) {
+      console.log(`Recording timer for tab ${tabId}: ${elapsed}s`);
+    }
+  }, 1000);
+}
+
+function stopBackgroundTimer(tabId) {
+  if (recordingTimers[tabId]) {
+    console.log("Stopping background timer for tab:", tabId);
+    clearInterval(recordingTimers[tabId]);
+    delete recordingTimers[tabId];
+  }
+}
+
+function getRecordingElapsedTime(tabId) {
+  const recordingState = recordingStates[tabId];
+  if (recordingState && recordingState.startTime) {
+    return Math.floor((Date.now() - recordingState.startTime) / 1000);
+  }
+  return 0;
 }
 
 // Clear Data Handler
@@ -394,6 +661,7 @@ async function handleClearAllData(request, sendResponse) {
     for (const tabId of recordingTabs) {
       try {
         await chrome.debugger.detach({ tabId: parseInt(tabId) });
+        stopBackgroundTimer(tabId); // Stop background timers
       } catch (error) {
         console.warn("Error detaching debugger from tab:", tabId, error);
       }
@@ -402,8 +670,18 @@ async function handleClearAllData(request, sendResponse) {
     // Clear all state
     networkRecording = {};
     consoleRecording = {};
+    videoRecording = {};
     recordingTabs.clear();
     recordingStates = {};
+
+    // Clear stored blobs and logs (like video)
+    storedVideoBlob = null;
+    storedConsoleLogs = null;
+
+    // Clear all timers
+    for (const tabId in recordingTimers) {
+      stopBackgroundTimer(tabId);
+    }
 
     sendResponse({ success: true });
   } catch (error) {
@@ -447,13 +725,8 @@ function onNetworkEvent(debuggeeId, method, params) {
   const tabId = debuggeeId.tabId;
 
   if (!networkRecording[tabId]) {
-    console.log(
-      `Network event ${method} received but no recording for tab ${tabId}`
-    );
     return;
   }
-
-  console.log(`Network event: ${method} for tab ${tabId}`);
 
   if (method === "Network.requestWillBeSent") {
     const request = {
@@ -466,7 +739,6 @@ function onNetworkEvent(debuggeeId, method, params) {
     };
 
     networkRecording[tabId].requests.push(request);
-    console.log(`Added request: ${request.method} ${request.url}`);
   }
 
   if (method === "Network.responseReceived") {
@@ -482,7 +754,6 @@ function onNetworkEvent(debuggeeId, method, params) {
     };
 
     networkRecording[tabId].responses.push(response);
-    console.log(`Added response: ${response.status} ${response.url}`);
   }
 
   if (method === "Network.loadingFailed") {
@@ -500,34 +771,64 @@ function onNetworkEvent(debuggeeId, method, params) {
 
 // Console monitoring functions (injected into pages)
 function injectConsoleMonitor() {
+  // Don't inject twice
+  if (window.sumoConsoleMonitorActive) {
+    console.log("🐛 Sumo console monitor already active");
+    return;
+  }
+
+  console.log("🐛 Injecting Sumo console monitor");
+  window.sumoConsoleMonitorActive = true;
+
   // Store original console methods
   window.sumoOriginalConsole = {
     log: console.log,
     warn: console.warn,
     error: console.error,
     info: console.info,
+    debug: console.debug,
+    trace: console.trace,
   };
 
   // Array to store console logs
   window.sumoConsoleLogs = window.sumoConsoleLogs || [];
 
-  // Override console methods
-  ["log", "warn", "error", "info"].forEach((method) => {
+  // Override console methods to capture ALL console activity
+  ["log", "warn", "error", "info", "debug", "trace"].forEach((method) => {
     console[method] = function (...args) {
-      // Call original method
+      // Call original method first
       window.sumoOriginalConsole[method].apply(console, args);
 
-      // Store log entry
-      window.sumoConsoleLogs.push({
+      // Store log entry with more details
+      const logEntry = {
         level: method,
         message: args
-          .map((arg) =>
-            typeof arg === "object" ? JSON.stringify(arg) : String(arg)
-          )
+          .map((arg) => {
+            if (typeof arg === "object") {
+              try {
+                return JSON.stringify(arg, null, 2);
+              } catch {
+                return String(arg);
+              }
+            }
+            return String(arg);
+          })
           .join(" "),
         timestamp: Date.now(),
         url: window.location.href,
-      });
+        stack: method === "error" ? new Error().stack : undefined,
+      };
+
+      window.sumoConsoleLogs.push(logEntry);
+
+      // Debug: Show that we captured the log
+      if (args[0] && args[0].toString().includes("🐛")) {
+        window.sumoOriginalConsole.log(
+          "✅ Captured test log:",
+          method,
+          args[0]
+        );
+      }
 
       // Limit log entries to prevent memory issues
       if (window.sumoConsoleLogs.length > 1000) {
@@ -538,7 +839,7 @@ function injectConsoleMonitor() {
 
   // Listen for uncaught errors
   window.addEventListener("error", (event) => {
-    window.sumoConsoleLogs.push({
+    const errorEntry = {
       level: "error",
       message: `Uncaught Error: ${event.error?.message || event.message}`,
       filename: event.filename,
@@ -546,22 +847,41 @@ function injectConsoleMonitor() {
       colno: event.colno,
       timestamp: Date.now(),
       url: window.location.href,
-    });
+      stack: event.error?.stack,
+    };
+    window.sumoConsoleLogs.push(errorEntry);
+    window.sumoOriginalConsole.error(
+      "✅ Captured uncaught error:",
+      errorEntry.message
+    );
   });
 
   // Listen for unhandled promise rejections
   window.addEventListener("unhandledrejection", (event) => {
-    window.sumoConsoleLogs.push({
+    const rejectionEntry = {
       level: "error",
       message: `Unhandled Promise Rejection: ${event.reason}`,
       timestamp: Date.now(),
       url: window.location.href,
-    });
+      stack: event.reason?.stack,
+    };
+    window.sumoConsoleLogs.push(rejectionEntry);
+    window.sumoOriginalConsole.error(
+      "✅ Captured promise rejection:",
+      rejectionEntry.message
+    );
   });
+
+  console.log("🐛 Sumo console monitor injection complete");
 }
 
 function getConsoleData() {
-  return window.sumoConsoleLogs || [];
+  const logs = window.sumoConsoleLogs || [];
+  console.log("🐛 getConsoleData called, returning", logs.length, "logs");
+  if (logs.length > 0) {
+    console.log("🐛 Sample logs:", logs.slice(0, 3));
+  }
+  return logs;
 }
 
 // Tab cleanup
@@ -576,6 +896,70 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 // Extension lifecycle
+// Video blob storage handlers
+function handleStoreVideoBlob(request, sendResponse) {
+  try {
+    console.log(
+      "Storing video blob in background script, size:",
+      request.videoData.size
+    );
+    storedVideoBlob = request.videoData;
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error("Error storing video blob:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+function handleGetVideoBlob(request, sendResponse) {
+  try {
+    if (storedVideoBlob) {
+      console.log("Retrieving stored video blob, size:", storedVideoBlob.size);
+      sendResponse({ success: true, videoData: storedVideoBlob });
+    } else {
+      console.log("No stored video blob found");
+      sendResponse({ success: true, videoData: null });
+    }
+  } catch (error) {
+    console.error("Error retrieving video blob:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+// Console logs storage handlers (following video pattern)
+function handleStoreConsoleLogs(request, sendResponse) {
+  try {
+    console.log(
+      "Storing console logs in background script, count:",
+      request.consoleLogs.length
+    );
+    storedConsoleLogs = request.consoleLogs;
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error("Error storing console logs:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+function handleGetConsoleLogs(request, sendResponse) {
+  try {
+    if (storedConsoleLogs) {
+      console.log(
+        "Retrieving stored console logs, count:",
+        storedConsoleLogs.length
+      );
+      sendResponse({ success: true, consoleLogs: storedConsoleLogs });
+    } else {
+      console.log("No stored console logs found");
+      sendResponse({ success: true, consoleLogs: [] });
+    }
+  } catch (error) {
+    console.error("Error retrieving console logs:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+// Cleanup on extension suspend
 chrome.runtime.onSuspend.addListener(() => {
   console.log("Extension suspending, cleaning up...");
   // Clean up any active debugger sessions

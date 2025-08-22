@@ -38,6 +38,12 @@
     "desktopCapture",
     "notifications"
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["constants/ownerInfo.js"],
+      "matches": ["*://*.sumologic.net/*", "http://localhost:8443/*"]
+    }
+  ],
   "icons": {
     "16": "icons/bug.png",
     "48": "icons/bug.png",
