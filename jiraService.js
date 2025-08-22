@@ -149,7 +149,7 @@ async function getCurrentUser() {
 
 const reportIssueInSlack = async (issueLink) => {
   // Placeholder function for Slack integration
-  const slackWebHookUrl = 'https://hooks.slack.com/services/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'
+  const slackWebHookUrl = window.ENV.slackUrl;
   const body = JSON.stringify({
 	attachments: [
 		{
