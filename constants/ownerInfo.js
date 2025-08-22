@@ -7,6 +7,14 @@ const OWNER_INFO = {
     slackChannel: "#obs-ui-ops",
     slackChannelId: "https://sumologic.enterprise.slack.com/archives/C08MQ8GENEN",
   },
+  "@Sanyaku/ui-core-platform": {
+    teamName: "UI Core platform",
+    teamJiraLabel: "UI Observability Issue",
+    managerName: "Ayan Ghatak",
+    managerId: "ayan.ghatak@sumologic.com",
+    slackChannel: "#obs-ui-ops",
+    slackChannelId: "https://sumologic.enterprise.slack.com/archives/C08MQ8GENEN",
+  },
   "@Frontend/core": {
     teamName: "Frontend Core",
     teamJiraLabel: "Frontend Core Issue",

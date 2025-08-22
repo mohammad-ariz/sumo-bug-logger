@@ -4,6 +4,7 @@ const COMPONENT_INFO = {
   logInspector: "@Sanyaku/ui-observability",
   searchBar: "@Sanyaku/ui-observability",
   filterPanel: "@Sanyaku/ui-observability",
+  navBar: '@Sanyaku/ui-core-platform',
   dashboardWidget: "@Frontend/core",
   navigationBar: "@Frontend/core",
   sidePanel: "@Frontend/core",

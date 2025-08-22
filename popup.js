@@ -586,6 +586,7 @@ document.addEventListener("DOMContentLoaded", () => {
         })
         .then((jiraLink) => {
           // For now, just show success (Jira integration will be added later)
+          document.querySelector('#afterJiraAddition').innerHTML = `Your Jira is created and posted in Slack: <b><a href="https://sumologic.enterprise.slack.com/archives/C08MQ8GENEN" target="_blank">Slack</a></b>`;
           updateStatusIndicator("ready", "Report Ready");
           reportBugBtn.textContent = "✅ Bug Reported Successfully";
           reportBugBtn.className = "button success-btn";
@@ -754,7 +755,7 @@ document.addEventListener("DOMContentLoaded", () => {
       selectRegionBtn.className = "button success-btn";
       selectRegionBtn.disabled = true;
       selectRegionBtn.style.cursor = "not-allowed";
-      step1Status.textContent = `Bug module ${bugComponentData?.componentName} captured successfully`;
+      step1Status.textContent = `Module ${bugComponentData?.componentName} captured successfully`;
     } else {
       selectRegionBtn.textContent = "🎯 Start Selection";
       selectRegionBtn.className = "button primary-btn";

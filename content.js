@@ -462,8 +462,8 @@ async function captureComponentScreenshot(element, componentName, teamOwner) {
       teamJiraLabel: "Logs/Metrics UI",
       managerName: "Ayan Ghatak",
       managerId: `${teamOwner.replace("@", "").toLowerCase()}@company.com`,
-      slackChannel: teamOwner,
-      slackChannelId: "C0000000000",
+      slackChannel: '#obs-ui-ops',
+      slackChannelId: "https://sumologic.enterprise.slack.com/archives/C08MQ8GENEN",
     };
 
     console.log(`Team info created:`, teamInfo);
