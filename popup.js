@@ -3,7 +3,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   console.log("POPUP SCRIPT LOADED - DOM ready");
 
-
   // Step buttons
   const selectRegionBtn = document.getElementById("selectRegionBtn");
   const recordNetworkBtn = document.getElementById("recordNetworkBtn");
@@ -46,8 +45,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const descriptionCounter = document.getElementById("descriptionCounter");
 
   // Footer elements
-  const dataStatus = document.getElementById("dataStatus");
-  const storageUsage = document.getElementById("storageUsage");
 
   // Modal elements
   const confirmModal = document.getElementById("confirmModal");
@@ -171,9 +168,8 @@ document.addEventListener("DOMContentLoaded", () => {
       // If no region data found, try again after a short delay
       // This handles timing issues where content script just saved data
 
-      console.log("CALLING updateUI() and updateStorageUsage()");
+      console.log("CALLING updateUI()");
       updateUI();
-      updateStorageUsage();
     } catch (error) {
       console.error("Error initializing popup:", error);
     }
@@ -205,8 +201,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Component Selection Handler
   async function handleComponentSelection() {
     try {
-      step1Status.textContent =
-        "Hover over module and click to select";
+      step1Status.textContent = "Hover over module and click to select";
       selectRegionBtn.textContent = "Module Selection Active...";
       selectRegionBtn.className = "button warning-btn";
       selectRegionBtn.disabled = true;
@@ -256,7 +251,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function startRecording() {
-
     // Start network recording
     const networkResponse = await chrome.runtime.sendMessage({
       action: "startNetworkRecording",
@@ -439,6 +433,7 @@ document.addEventListener("DOMContentLoaded", () => {
     recordNetworkBtn.textContent = "✅ Recording Complete";
     recordNetworkBtn.className = "button success-btn";
     recordNetworkBtn.disabled = true;
+    recordNetworkBtn.style.cursor = "not-allowed";
     step2Status.textContent = "Evidence collection completed successfully";
     recordingIndicators.classList.add("hidden");
 
@@ -575,18 +570,25 @@ document.addEventListener("DOMContentLoaded", () => {
           const uint8Array = new Uint8Array(recordingRes.videoData);
 
           videoBlob = new Blob([uint8Array], {
-            type: 'video/webm'
+            type: "video/webm",
           });
-          return window.jiraService.attachFilesToJira(res.key, harBlob, consoleBlob, videoBlob);
-        })
-        .then(jiraLink=>{
-          return window.jiraService.reportIssueInSlack(jiraLink).then(()=>jiraLink);
+          return window.jiraService.attachFilesToJira(
+            res.key,
+            harBlob,
+            consoleBlob,
+            videoBlob
+          );
         })
         .then((jiraLink) => {
-               // For now, just show success (Jira integration will be added later)
-              updateStatusIndicator("ready", "Report Ready");
-              reportBugBtn.textContent = "✅ Bug Reported Successfully";
-              reportBugBtn.className = "button success-btn";
+          return window.jiraService
+            .reportIssueInSlack(jiraLink)
+            .then(() => jiraLink);
+        })
+        .then((jiraLink) => {
+          // For now, just show success (Jira integration will be added later)
+          updateStatusIndicator("ready", "Report Ready");
+          reportBugBtn.textContent = "✅ Bug Reported Successfully";
+          reportBugBtn.className = "button success-btn";
         });
     } catch (error) {
       console.error("Error reporting bug:", error);
@@ -622,7 +624,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Reset form
       bugDescription.value = "";
-      severityLevel.value = "";
+      // Keep default severity as 'medium' since dropdown no longer has empty option
+      severityLevel.value = "medium";
       stepsToReproduce.value = "";
 
       // Reset button states
@@ -747,24 +750,50 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log("Updating UI for currentStep:", bugComponentData);
     // step 1
     if (bugComponentData) {
-      selectRegionBtn.textContent = "Reselect Component";
+      selectRegionBtn.textContent = "Component Selected";
       selectRegionBtn.className = "button success-btn";
       selectRegionBtn.disabled = true;
+      selectRegionBtn.style.cursor = "not-allowed";
       step1Status.textContent = `Bug module ${bugComponentData?.componentName} captured successfully`;
-
-      // Enable step 2
-      recordNetworkBtn.disabled = false;
-      step2Status.textContent = "Click to start recording reproducible steps";
+    } else {
+      selectRegionBtn.textContent = "🎯 Select Buggy Component";
+      selectRegionBtn.className = "button primary-btn";
+      selectRegionBtn.disabled = false;
+      selectRegionBtn.style.cursor = "pointer";
     }
 
-    // Update step 2 based on currentStep
-    if (currentStep >= 2) {
-      // If we're on step 2 or higher, enable recording button
+    // Update record button state (step 2) with clear precedence:
+    // 1) If currently recording -> enabled (stop)
+    // 2) If recording completed (currentStep >= 3 and not recording) -> disabled success
+    // 3) If step 1 completed -> enabled and secondary
+    // 4) Otherwise -> disabled
+    if (isRecording) {
       recordNetworkBtn.disabled = false;
-      if (!bugComponentData) {
-        step2Status.textContent =
-          "Recording started from toast - capture evidence";
-      }
+      recordNetworkBtn.textContent = "⏹️ Stop Recording";
+      recordNetworkBtn.className = "button danger-btn";
+      recordNetworkBtn.style.cursor = "pointer";
+      step2Status.textContent = "Recording in progress - reproduce the bug now";
+    } else if (currentStep >= 3) {
+      // Recording finished - disabled success
+      recordNetworkBtn.disabled = true;
+      recordNetworkBtn.textContent = " Recording Complete";
+      recordNetworkBtn.className = "button success-btn";
+      recordNetworkBtn.style.cursor = "not-allowed";
+      step2Status.textContent = "Evidence collection completed successfully";
+    } else if (bugComponentData) {
+      // Step 1 done, ready to start recording - secondary button
+      recordNetworkBtn.disabled = false;
+      recordNetworkBtn.textContent = "🔴 Start Recording";
+      recordNetworkBtn.className = "button primary-btn";
+      recordNetworkBtn.style.cursor = "pointer";
+      step2Status.textContent = "Click to start recording reproducible steps";
+    } else {
+      // Default: disabled
+      recordNetworkBtn.disabled = true;
+      recordNetworkBtn.textContent = "🎬 Record Evidence";
+      recordNetworkBtn.className = "button primary-btn";
+      recordNetworkBtn.style.cursor = "not-allowed";
+      step2Status.textContent = "Record your steps to reproduce the bug";
     }
 
     // Update step 2
@@ -973,22 +1002,10 @@ document.addEventListener("DOMContentLoaded", () => {
   function validateForm() {
     const isValid =
       bugDescription.value.trim().length > 0 &&
-      severityLevel.value !== "" &&
       (bugComponentData || networkData.length > 0);
 
     reportBugBtn.disabled = !isValid;
     return isValid;
-  }
-
-  async function updateStorageUsage() {
-    try {
-      const data = await chrome.storage.local.get(null);
-      const size = new Blob([JSON.stringify(data)]).size;
-      const sizeInMB = (size / (1024 * 1024)).toFixed(2);
-      storageUsage.textContent = `Using ${sizeInMB} MB storage`;
-    } catch (error) {
-      storageUsage.textContent = "Storage usage unknown";
-    }
   }
 
   // Universal download helper function
@@ -1357,12 +1374,8 @@ document.addEventListener("DOMContentLoaded", () => {
       } else {
         console.log("Storage change but no bugRegionData in changes");
       }
-      updateStorageUsage();
     }
   });
-
-  // Update storage usage periodically
-  setInterval(updateStorageUsage, 5000);
 
   // Debug function to test button update
   window.testButtonUpdate = function () {
