@@ -702,7 +702,7 @@ document.addEventListener("DOMContentLoaded", () => {
           // For now, just show success (Jira integration will be added later)
           document.querySelector(
             "#afterJiraAddition"
-          ).innerHTML = `Your Jira is created and posted in Slack: <b><a href="https://sumologic.enterprise.slack.com/archives/C08MQ8GENEN" target="_blank">Slack</a></b>`;
+          ).innerHTML = `Your Jira is created and posted in <b><a href="https://sumologic.enterprise.slack.com/archives/C08MQ8GENEN" target="_blank">Slack</a></b>`;
           reportBugBtn.textContent = "✅ Bug Reported Successfully";
           reportBugBtn.className = "button success-btn btn-width";
         });
