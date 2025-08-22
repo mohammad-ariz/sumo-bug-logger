@@ -458,8 +458,8 @@ async function captureComponentScreenshot(element, componentName, teamOwner) {
 
     // Create team info based on team owner
     const teamInfo = {
-      teamName: teamOwner.replace("@", "").split("/")[1] || "Unknown Team",
-      teamJiraLabel: "Component Bug",
+      teamName: "@"  + teamOwner.replace("@", "").split("/")[1] || "Unknown Team",
+      teamJiraLabel: "Logs/Metrics UI",
       managerName: "Ayan Ghatak",
       managerId: `${teamOwner.replace("@", "").toLowerCase()}@company.com`,
       slackChannel: teamOwner,

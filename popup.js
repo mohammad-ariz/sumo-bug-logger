@@ -545,7 +545,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const reporterId = res.accountId;
           const assigneeId = reporterId;
           const projectId = "10057"; // sumo project ID
-          const priority = "2"; // Medium priority
+          const priority = "3"; // Medium priority
           const componentName = "Query editor";
           const parentKey = "SUMO-268781"; // hack sumo issue epic
           const componentId = "10702"; // logs/metric UI
@@ -629,7 +629,7 @@ document.addEventListener("DOMContentLoaded", () => {
       stepsToReproduce.value = "";
 
       // Reset button states
-      selectRegionBtn.textContent = "🎯 Select Buggy Component";
+      selectRegionBtn.textContent = "🎯 Start Selection";
       selectRegionBtn.className = "button primary-btn";
       selectRegionBtn.disabled = false;
 
@@ -756,7 +756,7 @@ document.addEventListener("DOMContentLoaded", () => {
       selectRegionBtn.style.cursor = "not-allowed";
       step1Status.textContent = `Bug module ${bugComponentData?.componentName} captured successfully`;
     } else {
-      selectRegionBtn.textContent = "🎯 Select Buggy Component";
+      selectRegionBtn.textContent = "🎯 Start Selection";
       selectRegionBtn.className = "button primary-btn";
       selectRegionBtn.disabled = false;
       selectRegionBtn.style.cursor = "pointer";
