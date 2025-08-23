@@ -39,9 +39,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const downloadLogs = document.getElementById("downloadLogs");
 
   // Form elements
-  const bugDescription = document.getElementById("bugDescription");
+  const bugDescription = document.getElementById("bugDescription"); // title // summary
   const severityLevel = document.getElementById("severityLevel");
-  const stepsToReproduce = document.getElementById("stepsToReproduce");
+  const stepsToReproduce = document.getElementById("stepsToReproduce"); // descritpion
   const descriptionCounter = document.getElementById("descriptionCounter");
 
   // Footer elements
@@ -630,6 +630,11 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       reportBugBtn.textContent = "Creating Jira ticket...";
       reportBugBtn.disabled = true;
+      const projectId = "10057"; // sumo project ID
+      const priority = "3"; // Medium priority
+      const componentName = "Query editor";
+      const parentKey = "SUMO-268781"; // hack sumo issue epic
+      const componentId = "10702"; // logs/metric UI
 
       // Collect all data
       const bugReport = {
@@ -637,9 +642,11 @@ document.addEventListener("DOMContentLoaded", () => {
         networkData: networkData,
         consoleData: consoleData,
         videoBlob: videoBlob,
-        description: bugDescription.value,
+
+        description: stepsToReproduce.value,
+        title: componentName + " - " + (bugDescription.value || "Bug Report"),
+
         severity: severityLevel.value,
-        stepsToReproduce: stepsToReproduce.value,
         timestamp: Date.now(),
         url: (await chrome.tabs.get(currentTabId)).url,
         userAgent: navigator.userAgent,
@@ -657,20 +664,16 @@ document.addEventListener("DOMContentLoaded", () => {
         .getCurrentUser()
         .then((res) => {
           const reporterId = res.accountId;
-          const assigneeId = reporterId;
-          const projectId = "10057"; // sumo project ID
-          const priority = "3"; // Medium priority
-          const componentName = "Query editor";
-          const parentKey = "SUMO-268781"; // hack sumo issue epic
-          const componentId = "10702"; // logs/metric UI
+          const assigneeId = "61d857c2e67ea2006bf76275";
+
           return window.jiraService.createJiraIssue({
             assigneeId: assigneeId,
             componentId: componentId,
             description: bugReport.description,
             projectId: projectId,
             reporterId: reporterId,
-            summary:
-              componentName + " - " + (bugReport.description || "Bug Report"),
+            summary: bugReport.title,
+
             priority,
             parentKey,
           });
@@ -695,7 +698,7 @@ document.addEventListener("DOMContentLoaded", () => {
         })
         .then((jiraLink) => {
           return window.jiraService
-            .reportIssueInSlack(jiraLink)
+            .reportIssueInSlack(jiraLink, bugReport.title)
             .then(() => jiraLink);
         })
         .then((jiraLink) => {
