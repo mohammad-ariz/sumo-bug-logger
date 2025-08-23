@@ -13,6 +13,9 @@ const COMPONENT_INFO = {
   logInspector: "@Sanyaku/ui-observability",
   searchBar: "@Sanyaku/ui-observability",
   filterPanel: "@Sanyaku/ui-observability",
+  histogram: "@Sanyaku/ui-observability",
+  fieldBrowser: "@Sanyaku/ui-observability",
+  navBar: "@Sanyaku/ui-core-platform",
   dashboardWidget: "@Frontend/core",
   navigationBar: "@Frontend/core",
   sidePanel: "@Frontend/core",
@@ -69,10 +72,7 @@ function startComponentSelection() {
   document.addEventListener("keydown", handleKeydown, true);
 
   // Show toast notification
-  showToast(
-    "Hover over component to find module and click to select",
-    "info"
-  );
+  showToast("Hover over component to find module and click to select", "info");
 
   console.log(
     "Component selection mode activated - hover over elements to see highlights"
@@ -105,17 +105,13 @@ function handleMouseOver(event) {
 
   // Store original styles
   const originalStyles = {
-    outline: componentElement.style.outline,
-    outlineOffset: componentElement.style.outlineOffset,
-    boxShadow: componentElement.style.boxShadow,
+    border: componentElement.style.border,
   };
 
   componentElement._originalStyles = originalStyles;
 
   // Apply highlight styles
-  componentElement.style.outline = "2px solid #ff0000";
-  componentElement.style.outlineOffset = "2px";
-  componentElement.style.boxShadow = "0 0 0 4px rgba(255, 0, 0, 0.2)";
+  componentElement.style.border = "1px solid #ff0000";
 
   // Show tooltip with lock button
   showTooltip(event, componentName, componentElement);
@@ -366,9 +362,7 @@ function removeHighlight() {
 
     if (originalStyles) {
       // Restore original styles
-      element.style.outline = originalStyles.outline || "";
-      element.style.outlineOffset = originalStyles.outlineOffset || "";
-      element.style.boxShadow = originalStyles.boxShadow || "";
+      element.style.border = originalStyles.border || "";
 
       // Clean up stored properties
       delete element._originalStyles;
@@ -458,12 +452,14 @@ async function captureComponentScreenshot(element, componentName, teamOwner) {
 
     // Create team info based on team owner
     const teamInfo = {
-      teamName: "@"  + teamOwner.replace("@", "").split("/")[1] || "Unknown Team",
+      teamName:
+        "@" + teamOwner.replace("@", "").split("/")[1] || "Unknown Team",
       teamJiraLabel: "Logs/Metrics UI",
       managerName: "Ayan Ghatak",
       managerId: `${teamOwner.replace("@", "").toLowerCase()}@company.com`,
-      slackChannel: '#obs-ui-ops',
-      slackChannelId: "https://sumologic.enterprise.slack.com/archives/C08MQ8GENEN",
+      slackChannel: "#obs-ui-ops",
+      slackChannelId:
+        "https://sumologic.enterprise.slack.com/archives/C08MQ8GENEN",
     };
 
     console.log(`Team info created:`, teamInfo);
@@ -846,12 +842,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  if(request.action === "getRecordingBlob") {
+  if (request.action === "getRecordingBlob") {
     if (window.currentVideoBlob) {
-    window.currentVideoBlob.arrayBuffer()
-    .then(arrayBuffer=>{
-        sendResponse({ success: true, videoData: Array.from(new Uint8Array(arrayBuffer)) });
-    })
+      window.currentVideoBlob.arrayBuffer().then((arrayBuffer) => {
+        sendResponse({
+          success: true,
+          videoData: Array.from(new Uint8Array(arrayBuffer)),
+        });
+      });
     } else {
       sendResponse({ success: false, videoData: new Array() });
     }
