@@ -2,6 +2,7 @@ const COMPONENT_INFO = {
   queryEditor: "@Sanyaku/ui-observability",
   messageTable: "@Sanyaku/ui-observability", 
   logInspector: "@Sanyaku/ui-observability",
+  historgram: "@Sanyaku/ui-observability",
   searchBar: "@Sanyaku/ui-observability",
   filterPanel: "@Sanyaku/ui-observability",
   navBar: '@Sanyaku/ui-core-platform',
